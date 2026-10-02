@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v24';
+const GAME_VERSION = 'v25';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -785,11 +785,11 @@ const ETYPES = {
   // камикадзе: не стреляет, несётся на игрока и взрывается при контакте
   kam:     { r:15, hp:18, sp:235, dmg:26, fire:[99,99],   score:120, color:'#ff8d6b', dark:'#8a2f24', scale:0.62, bspd:0,   br:0 },
   // снайпер: держится далеко, целится лазером и бьёт точным мощным выстрелом
-  sniper:  { r:18, hp:30, sp:70,  dmg:22, fire:[3.0,4.4], score:180, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4 },
+  sniper:  { r:18, hp:30, sp:70,  dmg:19, fire:[3.0,4.4], score:180, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4 },
   // миномётчик: издалека навешивает бомбы по области (красный круг — точка падения)
-  mortar:  { r:21, hp:85, sp:42,  dmg:16, fire:[2.4,3.6], score:260, color:'#a8a27a', dark:'#5c5838', scale:0.95, bspd:0, br:0, fx:{ turret:'box', barrel:'heavy' } },
+  mortar:  { r:21, hp:50, sp:42,  dmg:16, fire:[3.6,5.0], score:220, color:'#a8a27a', dark:'#5c5838', scale:0.95, bspd:0, br:0, fx:{ turret:'box', barrel:'heavy' } },
   // медик: не стреляет, лечит соседних врагов — выбивай первым!
-  medic:   { r:17, hp:75, sp:95,  dmg:6,  fire:[99,99],   score:240, color:'#8fe0b0', dark:'#2e7d4f', scale:0.75, bspd:0, br:0, fx:{ cross:'#e84c3d' } }
+  medic:   { r:17, hp:40, sp:90,  dmg:6,  fire:[99,99],   score:200, color:'#8fe0b0', dark:'#2e7d4f', scale:0.75, bspd:0, br:0, fx:{ cross:'#e84c3d' } }
 };
 
 // ---------- биомы: палитра поля меняется каждые 10 волн ----------
@@ -832,18 +832,18 @@ function bossNumOf(n){ return n / BOSS_EVERY; }
 function diffFor(n){
   const D = currentDiff();
   return {
-    hp:    (1 + (n-1)*0.02) * D.hp,           // x3 к 100-й волне (норма)
-    dmg:   (1 + (n-1)*0.015) * D.dmg,         // x2.5
-    sp:    1 + Math.min(0.5, (n-1)*0.005),    // до +50% скорости
-    fire:  Math.max(0.55, 1 - (n-1)*0.004),   // интервалы стрельбы сжимаются
-    bspd:  1 + Math.min(0.45, (n-1)*0.004),   // снаряды быстрее
+    hp:    (1 + (n-1)*0.02) * D.hp,                      // x3 к 100-й волне (норма)
+    dmg:   Math.min(2.1, 1 + (n-1)*0.012) * D.dmg,       // мягче: x1.84 на 71-й, потолок x2.1
+    sp:    1 + Math.min(0.5, (n-1)*0.005),               // до +50% скорости
+    fire:  Math.max(0.6, 1 - (n-1)*0.004),               // интервалы стрельбы сжимаются
+    bspd:  1 + Math.min(0.45, (n-1)*0.004),              // снаряды быстрее
     score: 1 + (n-1)*0.02
   };
 }
 
 // Состав обычной волны: число врагов и доля тяжёлых растут с номером
 function waveComposition(n){
-  const count = Math.min(12, 3 + Math.floor(n/8) + (n > 4 && Math.random() < 0.5 ? 1 : 0));
+  const count = Math.min(11, 3 + Math.floor(n/9) + (n > 4 && Math.random() < 0.5 ? 1 : 0));
   const heavyW = n < 4  ? 0 : Math.min(0.28, 0.08 + n*0.003);
   const kamW   = n < 6  ? 0 : Math.min(0.18, 0.05 + n*0.0025);
   const snipW  = n < 8  ? 0 : Math.min(0.16, 0.05 + n*0.002);
@@ -1062,6 +1062,11 @@ function resetGame(wave, score, hp){
   player.hp = Math.min(player.maxHp, hp ?? player.maxHp);
   player.hull = -Math.PI/2; player.turret = -Math.PI/2; player.cd = 0;
   player.shieldT = 0; player.rapidT = 0; player.tripleT = 0; player.superCharge = 0;
+  // старт с чекпоинта — боевой комплект: щит на 5с и полшкалы супера
+  if((wave ?? 1) > 1){
+    player.shieldT = 5;
+    player.superCharge = 0.5;
+  }
   pet.x = player.x - 50; pet.y = player.y; pet.cd = 0; pet.t = 0;
   state.score = score ?? 0; state.shake = 0; state.freezeT = 0; state.magnetT = 0; state.awardedFor = 0;
   $('bossbarwrap').hidden = true;
@@ -1614,8 +1619,8 @@ function update(dt){
       if(e.healT <= 0){
         e.healT = 0.5;
         for(const o of enemies){
-          if(o !== e && o.hp < o.maxHp && dist(e.x,e.y,o.x,o.y) < 150){
-            o.hp = Math.min(o.maxHp, o.hp + 6);
+          if(o !== e && o.hp < o.maxHp && dist(e.x,e.y,o.x,o.y) < 130){
+            o.hp = Math.min(o.maxHp, o.hp + 3);
             if(!REDUCED) particles.push({ x:o.x+rand(-8,8), y:o.y+rand(-8,8), vx:0, vy:-28, life:0.5, t:0, r:2.5, color:'#6fe58f' });
           }
         }

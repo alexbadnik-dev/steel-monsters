@@ -1,5 +1,5 @@
 // Service worker: кэш-прежде-сети, игра работает без интернета после первого запуска.
-const CACHE = 'steel-monsters-v2';
+const CACHE = 'steel-monsters-v3';
 const ASSETS = [
   './',
   './index.html',

@@ -160,6 +160,7 @@ html{height:100%}
     <button class="btn gray small" id="boardBtn">🏆 РЕЙТИНГ</button>
   </div>
   <p class="record" id="coinsText"></p>
+  <div class="menurow" id="musicRow"></div>
   <p class="ver" id="verText"></p>
 </div>
 
@@ -212,7 +213,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v10';
+const GAME_VERSION = 'v11';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -268,14 +269,19 @@ const SKINS = [
   { id:'orange',  name:'Оранжевый',  cost:250,  hull:'#ffa94d', dark:'#9c5a14' },
   { id:'camo',    name:'Камуфляж',   cost:300,  hull:'#6e8a52', dark:'#33461f', fx:{ pattern:'camo' } },
   { id:'melon',   name:'Арбуз',      cost:350,  hull:'#4ec46a', dark:'#1f7a40', fx:{ pattern:'melon', turretColor:'#ff6b6b' } },
+  { id:'taxi',    name:'Такси',      cost:450,  hull:'#f6c82d', dark:'#8a6d08', fx:{ pattern:'checker' } },
   { id:'tiger',   name:'Тигр',       cost:500,  hull:'#d8b267', dark:'#6e5634', fx:{ pattern:'stripes', barrel:'heavy' } },
+  { id:'pirate',  name:'Пират',      cost:550,  hull:'#3a3f47', dark:'#14181c', fx:{ pattern:'xmark', eyeColor:'#ffd84d' } },
   { id:'double',  name:'Двустволка', cost:600,  hull:'#8fa6b8', dark:'#4e6274', fx:{ barrel:'double', turret:'wide' } },
   { id:'stealth', name:'Стелс',      cost:700,  hull:'#3c4650', dark:'#161b20', fx:{ body:'stealth', eyeColor:'#6fd9e8' } },
   { id:'robot',   name:'Робот',      cost:800,  hull:'#9db0bf', dark:'#5c7183', fx:{ turret:'box', antenna:true, eyeColor:'#ffd84d' } },
+  { id:'police',  name:'Полиция',    cost:850,  hull:'#e8eef2', dark:'#2d5f8a', fx:{ siren:true } },
   { id:'ghost',   name:'Призрак',    cost:900,  hull:'#e8eef2', dark:'#7d8a94', fx:{ alpha:0.55, glow:'#bfe8ff' } },
   { id:'lava',    name:'Лава',       cost:1000, hull:'#5a2c20', dark:'#2b1410', fx:{ pattern:'cracks', glow:'#ff6a3a' } },
+  { id:'neon',    name:'Неон',       cost:1100, hull:'#1c2228', dark:'#0e1216', fx:{ glow:'#2de0ff', eyeColor:'#2de0ff' } },
   { id:'ufo',     name:'НЛО',        cost:1200, hull:'#7ee0d2', dark:'#2d7a6e', fx:{ body:'hover', glow:'#7ee0d2' } },
-  { id:'gold',    name:'Золотой',    cost:1500, hull:'#f6d32d', dark:'#8a6d08', fx:{ sparkle:true, glow:'#ffd84d', barrel:'heavy' } }
+  { id:'gold',    name:'Золотой',    cost:1500, hull:'#f6d32d', dark:'#8a6d08', fx:{ sparkle:true, glow:'#ffd84d', barrel:'heavy' } },
+  { id:'rainbow', name:'Хамелеон',   cost:2000, hull:'#58d97b', dark:'#1f7a40', fx:{ rainbow:true } }
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
 
@@ -381,22 +387,63 @@ function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e
 
 // ---------- музыка: оригинальный 8-битный чиптюн (секвенсор на Web Audio) ----------
 const music = (() => {
-  let on = true;
-  try{ on = localStorage.getItem('sm_music') !== '0'; }catch(e){}
+  let on = true, trackId = 'dance';
+  try{
+    on = localStorage.getItem('sm_music') !== '0';
+    const t = localStorage.getItem('sm_track');
+    if(['dance','rock','chill'].includes(t)) trackId = t;
+  }catch(e){}
   let timer = null, step = 0, nextTime = 0, noiseBuf = null;
-  const BPM = 150, STEP = 60/BPM/4; // 16-е ноты
   const f = m => 440*Math.pow(2, (m-69)/12);
-  // Ля-минор, качовый грув: лид по 16-м (0 — пауза), бас по 8-м
-  const LEAD = [
-    69,0,72,74, 76,0,74,72, 69,0,72,0, 76,74,72,74,   // куплетная фраза
-    67,0,71,72, 74,0,72,71, 67,0,71,0, 74,72,71,72,   // ответ на G
-    69,0,72,74, 76,0,79,76, 81,0,79,76, 74,0,76,0,    // подъём
-    72,0,76,0, 74,0,71,0, 69,0,67,0, 69,0,0,0         // разрешение
-  ];
-  const BASS = [
-    45,45,45,52, 45,45,45,52, 43,43,43,50, 43,43,43,50,
-    45,45,45,52, 45,45,45,52, 48,48,43,43, 45,45,45,45
-  ];
+  // Три оригинальных трека в разных стилях (лид по 16-м, 0 — пауза; бас по 8-м)
+  const TRACKS = {
+    // данс-поп: качовый минор, 150 BPM
+    dance: {
+      name: 'ДАНС', bpm: 150, leadType: 'square', leadVol: 0.032, bassVol: 0.055,
+      lead: [
+        69,0,72,74, 76,0,74,72, 69,0,72,0, 76,74,72,74,
+        67,0,71,72, 74,0,72,71, 67,0,71,0, 74,72,71,72,
+        69,0,72,74, 76,0,79,76, 81,0,79,76, 74,0,76,0,
+        72,0,76,0, 74,0,71,0, 69,0,67,0, 69,0,0,0
+      ],
+      bass: [
+        45,45,45,52, 45,45,45,52, 43,43,43,50, 43,43,43,50,
+        45,45,45,52, 45,45,45,52, 48,48,43,43, 45,45,45,45
+      ],
+      kick: i => i % 4 === 0, snare: i => i % 8 === 4, hat: i => i % 2 === 1
+    },
+    // рок-драйв: ми-минорный рифф пилой, 142 BPM
+    rock: {
+      name: 'РОК', bpm: 142, leadType: 'sawtooth', leadVol: 0.026, bassVol: 0.06,
+      lead: [
+        64,0,0,64, 67,0,64,0, 62,0,64,0, 60,0,62,0,
+        64,0,0,64, 67,0,69,0, 71,0,69,0, 67,0,64,0,
+        60,0,0,60, 64,0,60,0, 59,0,60,0, 62,0,64,0,
+        55,0,59,62, 64,0,62,0, 59,0,62,0, 64,0,0,0
+      ],
+      bass: [
+        40,40,40,40, 40,40,47,40, 36,36,36,36, 36,36,43,36,
+        40,40,40,40, 40,40,47,40, 38,38,38,38, 40,40,40,40
+      ],
+      kick: i => i % 4 === 0 || i % 16 === 14, snare: i => i % 8 === 4, hat: i => i % 2 === 0
+    },
+    // чилл: неторопливый мажорный перебор, 96 BPM
+    chill: {
+      name: 'ЧИЛЛ', bpm: 96, leadType: 'triangle', leadVol: 0.05, bassVol: 0.045,
+      lead: [
+        76,0,0,0, 74,0,72,0, 69,0,0,0, 0,0,72,74,
+        76,0,0,0, 79,0,76,0, 74,0,0,0, 0,0,0,0,
+        72,0,0,0, 71,0,69,0, 67,0,0,0, 0,0,69,71,
+        72,0,0,0, 74,0,71,0, 69,0,0,0, 0,0,0,0
+      ],
+      bass: [
+        45,0,45,0, 45,0,45,0, 41,0,41,0, 41,0,41,0,
+        48,0,48,0, 48,0,48,0, 43,0,43,0, 43,0,43,0
+      ],
+      kick: i => i % 8 === 0, snare: () => false, hat: i => i % 4 === 2
+    }
+  };
+  function cur(){ return TRACKS[trackId] || TRACKS.dance; }
   function osc(type, freq, t, dur, vol){
     const o = AC.createOscillator(), g = AC.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
@@ -431,17 +478,18 @@ const music = (() => {
   }
   function schedule(){
     if(!AC || AC.state !== 'running') return;
+    const T = cur(), STEP = 60/T.bpm/4;
     while(nextTime < AC.currentTime + 0.3){
       const i = step % 64;
-      const m = LEAD[i];
-      if(m) osc('square', f(m), nextTime, STEP*1.7, 0.032);
+      const m = T.lead[i];
+      if(m) osc(T.leadType, f(m), nextTime, STEP*1.7, T.leadVol);
       if(i % 2 === 0){
-        const b = BASS[(i/2) % 32];
-        osc('triangle', f(b), nextTime, STEP*1.7, 0.055);
+        const b = T.bass[(i/2) % 32];
+        if(b) osc('triangle', f(b), nextTime, STEP*1.7, T.bassVol);
       }
-      if(i % 4 === 0) kick(nextTime);
-      if(i % 8 === 4) noise(nextTime, 0.08, 0.035, 2600); // снэйр
-      if(i % 2 === 1) noise(nextTime, 0.03, 0.015, 7000); // хэт на слабую долю
+      if(T.kick(i)) kick(nextTime);
+      if(T.snare(i)) noise(nextTime, 0.08, 0.035, 2600);
+      if(T.hat(i)) noise(nextTime, 0.03, 0.015, 7000);
       nextTime += STEP;
       step++;
     }
@@ -453,13 +501,20 @@ const music = (() => {
     timer = setInterval(schedule, 120);
   }
   function stop(){ if(timer){ clearInterval(timer); timer = null; } }
-  function toggle(){
-    on = !on;
+  function setOn(v){
+    on = v;
     try{ localStorage.setItem('sm_music', on ? '1' : '0'); }catch(e){}
     if(on) start(); else stop();
-    return on;
   }
-  return { start, stop, toggle, get on(){ return on; } };
+  function toggle(){ setOn(!on); return on; }
+  function setTrack(id){
+    if(!TRACKS[id]) return;
+    trackId = id; step = 0;
+    try{ localStorage.setItem('sm_track', id); }catch(e){}
+    setOn(true);
+  }
+  return { start, stop, toggle, setOn, setTrack, TRACKS,
+           get on(){ return on; }, get track(){ return trackId; } };
 })();
 
 // ---------- enemy types & waves ----------
@@ -472,9 +527,9 @@ const ETYPES = {
   // снайпер: держится далеко, целится лазером и бьёт точным мощным выстрелом
   sniper:  { r:18, hp:30, sp:70,  dmg:22, fire:[3.0,4.4], score:180, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4 },
   // миномётчик: издалека навешивает бомбы по области (красный круг — точка падения)
-  mortar:  { r:21, hp:50, sp:42,  dmg:16, fire:[3.6,5.0], score:220, color:'#a8a27a', dark:'#5c5838', scale:0.95, bspd:0, br:0, fx:{ turret:'box', barrel:'heavy' } },
+  mortar:  { r:21, hp:85, sp:42,  dmg:16, fire:[2.4,3.6], score:260, color:'#a8a27a', dark:'#5c5838', scale:0.95, bspd:0, br:0, fx:{ turret:'box', barrel:'heavy' } },
   // медик: не стреляет, лечит соседних врагов — выбивай первым!
-  medic:   { r:17, hp:40, sp:90,  dmg:6,  fire:[99,99],   score:200, color:'#8fe0b0', dark:'#2e7d4f', scale:0.75, bspd:0, br:0, fx:{ cross:'#e84c3d' } }
+  medic:   { r:17, hp:75, sp:95,  dmg:6,  fire:[99,99],   score:240, color:'#8fe0b0', dark:'#2e7d4f', scale:0.75, bspd:0, br:0, fx:{ cross:'#e84c3d' } }
 };
 
 // ---------- биомы: палитра поля меняется каждые 10 волн ----------
@@ -662,13 +717,18 @@ function startWave(n){
   }
 }
 
-// Класс танка + апгрейды за уже побеждённых боссов (детерминированно от номера волны)
+// Класс танка + перки за побеждённых боссов (детерминированно от номера волны).
+// С каждым боссом: +10 HP, +2 урон, −3% перезарядка, +2 скорость, +0.4с к бонусам;
+// с 3-го босса открывается регенерация и растёт дальше.
 function applyProgress(wave){
   const cls = playerClass();
   const ups = Math.floor((wave-1) / BOSS_EVERY);
   player.maxHp = cls.hp + ups*10;
   player.dmg = cls.dmg + ups*2;
-  player.speed = cls.speed;
+  player.speed = cls.speed + ups*2;
+  player.cdMult = Math.max(0.7, 1 - ups*0.03);
+  player.regen = ups >= 3 ? 0.25*(ups-2) : 0;
+  player.buffBonus = ups*0.4;
 }
 
 function resetGame(wave, score, hp){
@@ -721,10 +781,12 @@ function onBossKilled(){
   addFloat(b.x, b.y, '+' + sc);
   $('bossbarwrap').hidden = true;
   if(state.wave >= TOTAL_WAVES){ endGame(true); return; }
-  // награда: +10 к макс. HP, +2 к урону, лечение
-  player.maxHp += 10; player.dmg += 2;
+  // награда: пересчитываем все перки на новый уровень и лечим
+  applyProgress(state.wave + 1);
   player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp*0.5));
-  addFloat(player.x, player.y - 44, '+10 HP · +2 УРОН', '#6fe58f');
+  addFloat(player.x, player.y - 44, '+10 HP · +2 УРОН · −3% ПЕРЕЗАРЯДКА', '#6fe58f');
+  if(b.num === 3) addFloat(player.x, player.y - 70, 'НОВЫЙ ПЕРК: РЕГЕНЕРАЦИЯ!', '#f1c40f');
+  else if(b.num > 3) addFloat(player.x, player.y - 70, 'РЕГЕН +0.25/с · БОНУСЫ ДОЛЬШЕ', '#f1c40f');
   waveBanner = { text: 'БОСС УНИЧТОЖЕН!', t: 1.6 };
   sfx.win();
   setTimeout(()=>{ if(state.mode==='play') startWave(state.wave+1); }, 1500);
@@ -937,10 +999,11 @@ function dropPickup(x, y){
 }
 function applyPickup(p){
   sfx.pickup();
+  const bb = player.buffBonus || 0; // перк: бонусы живут дольше с каждым боссом
   if(p.type === 'med'){ player.hp = Math.min(player.maxHp, player.hp + 25); addFloat(p.x, p.y, '+25', '#6fe58f'); }
-  else if(p.type === 'shield'){ player.shieldT = 6; addFloat(p.x, p.y, 'ЩИТ!', '#6fd9e8'); }
-  else if(p.type === 'rapid'){ player.rapidT = 6; addFloat(p.x, p.y, 'СКОРОСТРЕЛ!', '#f1c40f'); }
-  else if(p.type === 'triple'){ player.tripleT = 8; addFloat(p.x, p.y, 'ТРОЙНОЙ!', '#ff9f43'); }
+  else if(p.type === 'shield'){ player.shieldT = 6 + bb; addFloat(p.x, p.y, 'ЩИТ!', '#6fd9e8'); }
+  else if(p.type === 'rapid'){ player.rapidT = 6 + bb; addFloat(p.x, p.y, 'СКОРОСТРЕЛ!', '#f1c40f'); }
+  else if(p.type === 'triple'){ player.tripleT = 8 + bb; addFloat(p.x, p.y, 'ТРОЙНОЙ!', '#ff9f43'); }
 }
 
 // ---------- update ----------
@@ -989,8 +1052,11 @@ function update(dt){
   if(firing && player.cd <= 0 && (aimA !== null || !IS_TOUCH)){
     playerShoot();
     const cls = playerClass();
-    player.cd = player.rapidT > 0 ? cls.rapidCd : cls.cd;
+    player.cd = (player.rapidT > 0 ? cls.rapidCd : cls.cd) * (player.cdMult || 1);
   }
+
+  // перк: регенерация (с 3-го босса)
+  if(player.regen) player.hp = Math.min(player.maxHp, player.hp + player.regen*dt);
 
   // blink timers + дым из сильно подбитых танков
   for(const t of [player, ...(boss?[boss]:[]), ...enemies]){
@@ -1051,8 +1117,8 @@ function update(dt){
       if(e.healT <= 0){
         e.healT = 0.5;
         for(const o of enemies){
-          if(o !== e && o.hp < o.maxHp && dist(e.x,e.y,o.x,o.y) < 130){
-            o.hp = Math.min(o.maxHp, o.hp + 3);
+          if(o !== e && o.hp < o.maxHp && dist(e.x,e.y,o.x,o.y) < 150){
+            o.hp = Math.min(o.maxHp, o.hp + 6);
             if(!REDUCED) particles.push({ x:o.x+rand(-8,8), y:o.y+rand(-8,8), vx:0, vy:-28, life:0.5, t:0, r:2.5, color:'#6fe58f' });
           }
         }
@@ -1306,6 +1372,15 @@ function drawTank(t, opts, c){
   const s = opts.scale || 1;
   const fx = opts.fx || {};
   const baseA = fx.alpha || 1;
+  // хамелеон: цвет непрерывно переливается
+  let hullC = opts.hullColor, darkC = opts.darkColor;
+  if(fx.rainbow){
+    const hue = Math.round((state.time*55) % 360);
+    hullC = 'hsl(' + hue + ',75%,60%)';
+    darkC = 'hsl(' + hue + ',75%,32%)';
+  }
+  // полиция: мигалка красный/синий
+  const glowC = fx.siren ? (Math.floor(state.time*5) % 2 ? '#ff4040' : '#3f8cff') : fx.glow;
   c.save();
   c.translate(t.x, t.y);
   c.globalAlpha = baseA;
@@ -1315,8 +1390,8 @@ function drawTank(t, opts, c){
   c.beginPath(); c.ellipse(4*s, 6*s, 27*s, 23*s, 0, 0, Math.PI*2); c.fill();
 
   // свечение (лава, НЛО)
-  if(fx.glow){
-    c.strokeStyle = fx.glow;
+  if(glowC){
+    c.strokeStyle = glowC;
     c.globalAlpha = baseA * (0.35 + 0.2*Math.sin(state.time*6));
     c.lineWidth = 4;
     c.beginPath(); c.arc(0, 0, 30*s, 0, Math.PI*2); c.stroke();
@@ -1328,16 +1403,16 @@ function drawTank(t, opts, c){
   c.rotate(t.hull);
   if(fx.body === 'hover'){
     // летающая платформа без гусениц
-    c.fillStyle = opts.darkColor;
+    c.fillStyle = darkC;
     c.beginPath(); c.ellipse(0, 0, 25*s, 20*s, 0, 0, Math.PI*2); c.fill();
-    c.fillStyle = opts.hullColor;
+    c.fillStyle = hullC;
     c.beginPath(); c.ellipse(0, 0, 21*s, 16*s, 0, 0, Math.PI*2); c.fill();
     c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
     c.beginPath(); c.ellipse(0, 0, 21*s, 16*s, 0, 0, Math.PI*2); c.stroke();
     c.fillStyle = '#ffffff22';
     c.beginPath(); c.ellipse(-3*s, -5*s, 13*s, 7*s, 0, 0, Math.PI*2); c.fill();
   } else {
-    c.fillStyle = opts.darkColor;
+    c.fillStyle = darkC;
     rrectC(c, -24*s, -20*s, 48*s, 9*s, 4*s); c.fill();
     rrectC(c, -24*s, 11*s, 48*s, 9*s, 4*s); c.fill();
     c.fillStyle = '#00000033';
@@ -1347,7 +1422,7 @@ function drawTank(t, opts, c){
     }
     if(fx.body === 'stealth'){
       // гранёный корпус
-      c.fillStyle = opts.hullColor;
+      c.fillStyle = hullC;
       c.beginPath();
       c.moveTo(-21*s,-9*s); c.lineTo(-8*s,-14*s); c.lineTo(15*s,-12*s); c.lineTo(23*s,0);
       c.lineTo(15*s,12*s); c.lineTo(-8*s,14*s); c.lineTo(-21*s,9*s); c.closePath();
@@ -1358,7 +1433,7 @@ function drawTank(t, opts, c){
       c.moveTo(-21*s,-9*s); c.lineTo(-8*s,-14*s); c.lineTo(15*s,-12*s); c.lineTo(23*s,0); c.lineTo(-21*s,0); c.closePath();
       c.fill();
     } else {
-      c.fillStyle = opts.hullColor;
+      c.fillStyle = hullC;
       rrectC(c, -21*s, -13*s, 42*s, 26*s, 6*s); c.fill();
       c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
       rrectC(c, -21*s, -13*s, 42*s, 26*s, 6*s); c.stroke();
@@ -1382,6 +1457,24 @@ function drawTank(t, opts, c){
         for(const py of [-9,-3,3,9]){
           c.beginPath(); c.moveTo(-21*s, py*s); c.lineTo(21*s, py*s); c.stroke();
         }
+      } else if(fx.pattern === 'checker'){
+        c.fillStyle = 'rgba(20,20,20,0.8)';
+        for(let i=0;i<7;i++){
+          if(i % 2 === 0) c.fillRect((-21+i*6)*s, -13*s, 6*s, 6*s);
+          else c.fillRect((-21+i*6)*s, -7*s, 6*s, 6*s);
+        }
+        for(let i=0;i<7;i++){
+          if(i % 2 === 0) c.fillRect((-21+i*6)*s, 7*s, 6*s, 6*s);
+          else c.fillRect((-21+i*6)*s, 1*s, 6*s, 6*s);
+        }
+      } else if(fx.pattern === 'xmark'){
+        c.strokeStyle = 'rgba(232,238,242,0.85)'; c.lineWidth = 4*s; c.lineCap = 'round';
+        c.beginPath(); c.moveTo(-14*s, -9*s); c.lineTo(14*s, 9*s); c.stroke();
+        c.beginPath(); c.moveTo(-14*s, 9*s); c.lineTo(14*s, -9*s); c.stroke();
+        c.fillStyle = 'rgba(232,238,242,0.9)';
+        for(const [bx,by] of [[-14,-9],[14,9],[-14,9],[14,-9]]){
+          c.beginPath(); c.arc(bx*s, by*s, 2.6*s, 0, Math.PI*2); c.fill();
+        }
       } else if(fx.pattern === 'cracks'){
         c.strokeStyle = fx.glow || '#ff6a3a'; c.lineWidth = 2*s; c.lineCap = 'round';
         c.globalAlpha = baseA * (0.65 + 0.35*Math.sin(state.time*5));
@@ -1401,7 +1494,7 @@ function drawTank(t, opts, c){
   // turret
   c.save();
   c.rotate(t.turret);
-  c.fillStyle = opts.darkColor;
+  c.fillStyle = darkC;
   if(fx.barrel === 'double'){
     rrectC(c, 10*s, -8.5*s, 24*s, 6*s, 2.5*s); c.fill();
     rrectC(c, 10*s, 2.5*s, 24*s, 6*s, 2.5*s); c.fill();
@@ -1417,7 +1510,7 @@ function drawTank(t, opts, c){
     c.fillStyle = '#00000055';
     c.fillRect(32*s, -4*s, 4*s, 8*s);
   }
-  const tc = fx.turretColor || opts.hullColor;
+  const tc = fx.turretColor || hullC;
   if(fx.turret === 'wide'){
     c.fillStyle = tc;
     rrectC(c, -14*s, -9*s, 28*s, 18*s, 7*s); c.fill();
@@ -1452,7 +1545,7 @@ function drawTank(t, opts, c){
     c.fillRect(-5*s, -5*s, 4*s, 10*s);
   }
   if(fx.antenna){
-    c.strokeStyle = opts.darkColor; c.lineWidth = 2*s; c.lineCap = 'round';
+    c.strokeStyle = darkC; c.lineWidth = 2*s; c.lineCap = 'round';
     c.beginPath(); c.moveTo(-8*s, -8*s); c.lineTo(-14*s, -16*s); c.stroke();
     c.fillStyle = '#ff5540';
     c.beginPath(); c.arc(-14*s, -16*s, 2.5*s, 0, Math.PI*2); c.fill();
@@ -1469,7 +1562,7 @@ function drawTank(t, opts, c){
     c.beginPath(); c.arc(6.1*s, -4.4*s, 2.1*s, 0, Math.PI*2); c.fill();
     c.beginPath(); c.arc(6.1*s, 5.1*s, 2.1*s, 0, Math.PI*2); c.fill();
     if(opts.angry){
-      c.strokeStyle = opts.rage ? '#ff5540' : opts.darkColor;
+      c.strokeStyle = opts.rage ? '#ff5540' : darkC;
       c.lineWidth = 3*s; c.lineCap = 'round';
       c.beginPath(); c.moveTo(0.2*s, -10*s); c.lineTo(9*s, -6.5*s); c.stroke();
       c.beginPath(); c.moveTo(0.2*s, 10*s); c.lineTo(9*s, 6.5*s); c.stroke();
@@ -1858,6 +1951,27 @@ $('nameInput').addEventListener('input', e=>{
   saveProfile();
 });
 
+// ---------- выбор музыки ----------
+function renderMusicRow(){
+  const row = $('musicRow');
+  row.innerHTML = '';
+  const items = [['dance','💃 ДАНС'],['rock','🎸 РОК'],['chill','🌙 ЧИЛЛ'],[null,'🔇 ВЫКЛ']];
+  for(const [id, label] of items){
+    const b = document.createElement('button');
+    const active = id === null ? !music.on : (music.on && music.track === id);
+    b.className = 'classbtn' + (active ? ' sel' : '');
+    b.textContent = label;
+    b.addEventListener('click', ()=>{
+      audio();
+      if(id === null) music.setOn(false);
+      else music.setTrack(id);
+      updateMusicBtn();
+      renderMusicRow();
+    });
+    row.append(b);
+  }
+}
+
 // ---------- выбор класса ----------
 function renderClassRow(){
   const row = $('classRow');
@@ -1888,7 +2002,7 @@ $('colorReset').addEventListener('click', ()=>{
 $('pauseBtn').addEventListener('click', pauseGame);
 
 function updateMusicBtn(){ $('musicBtn').textContent = music.on ? '🎵' : '🎵'; $('musicBtn').style.opacity = music.on ? '1' : '0.4'; }
-$('musicBtn').addEventListener('click', ()=>{ audio(); music.toggle(); updateMusicBtn(); });
+$('musicBtn').addEventListener('click', ()=>{ audio(); music.toggle(); updateMusicBtn(); if(state.mode === 'menu') renderMusicRow(); });
 updateMusicBtn();
 
 function updateSoundBtn(){ $('soundBtn').textContent = soundOn ? '🔊' : '🔇'; }
@@ -1909,6 +2023,7 @@ function updateMenuBest(){
   $('nameInput').value = profile.name;
   $('verText').textContent = 'Версия ' + GAME_VERSION;
   renderClassRow();
+  renderMusicRow();
 }
 
 if(IS_TOUCH){

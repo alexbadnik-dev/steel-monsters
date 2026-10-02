@@ -192,6 +192,7 @@ html{height:100%}
   </div>
   <p>Бонусы можно прокачать в магазине: сильнее лечилка, дольше щит и скорострел, а тройной на максимуме превращается в ПЯТЬ стволов.</p>
   <p>Боссы — каждая 10-я волна, у каждого свой характер. За босса танк получает перки: здоровье, урон, перезарядку, а с третьего — регенерацию.</p>
+  <p>Прошёл все 100 волн? После победы открывается бесконечное ВЫЖИВАНИЕ: тот же бой продолжается дальше, враги всё сильнее, рейтинг запомнит твою лучшую волну.</p>
   <p>Берегись: снайпер целится красным лазером, камикадзе взрывается при контакте, миномётчик и дроны бомбят по красным кругам — выезжай из них! Медик с крестом лечит своих — выбивай его первым.</p>
   <p>⚡ Супер-способность «Ударная волна» заряжается убийствами (жёлтая полоска под здоровьем): сметает все вражеские снаряды и бомбы и бьёт всех вокруг. Активация — <b>Q</b> на компьютере или жёлтая кнопка над огнём на телефоне.</p>
   <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины, классы танков и питомцев: Напарник стреляет по врагам, Ремонтник чинит твой танк.</p>
@@ -228,14 +229,16 @@ html{height:100%}
   <p class="record" id="winBest"></p>
   <p class="record" id="winPlace"></p>
   <p>Все 100 волн пройдены, финальный босс уничтожен. Поле боя — твоё!</p>
-  <button class="btn" id="winBtn">ИГРАТЬ СНОВА</button>
+  <p>…или продолжи этот же бой в бесконечном выживании: волны всё труднее, боссы идут по второму кругу. До какой волны дотянешь?</p>
+  <button class="btn" id="winSurviveBtn">ВЫЖИВАНИЕ ∞</button>
+  <button class="btn gray" id="winBtn">ИГРАТЬ СНОВА</button>
   <button class="btn gray small" id="winMenuBtn">В МЕНЮ</button>
 </div>
 
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v15';
+const GAME_VERSION = 'v16';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -406,7 +409,8 @@ function loadCheckpoint(){
 }
 let checkpoint = loadCheckpoint();
 function saveCheckpoint(n){
-  if(n % 10 === 1 && n > checkpoint && n > 1){
+  // чекпоинты только в кампании (волны 11..91); выживание — на один присест
+  if(n % 10 === 1 && n > checkpoint && n > 1 && n <= 91){
     checkpoint = n;
     try{ localStorage.setItem('sm_wave', String(n)); }catch(e){}
   }
@@ -600,7 +604,7 @@ const BIOMES = [
   { name:'СУМРАК',        ground:'#241f33', grid:'#2e2840', patch:'#1c1828', bush:['#3a2f55','#4a3d6a'], rock:['#554a70','#6a5e85'], crater:['#1a1626','#3a3252','#120f1c'] },
   { name:'ВУЛКАН',        ground:'#2b1c1a', grid:'#38231f', patch:'#221513', bush:['#5a2c20','#743828'], rock:['#5c4038','#705048'], crater:['#3a1410','#7a3020','#c2402a'] }
 ];
-function biomeFor(n){ return BIOMES[Math.min(BIOMES.length-1, Math.floor((n-1)/10))]; }
+function biomeFor(n){ return BIOMES[Math.floor((n-1)/10) % BIOMES.length]; } // после 100-й биомы идут по кругу
 
 // ---------- 10 уникальных боссов: облик + поведение ----------
 // dash — рывки к игроку; drones — запускает дроны-бомбардировщики;
@@ -658,10 +662,10 @@ function waveComposition(n){
   }
   return list;
 }
-// дроны на обычных волнах: с 41-й один, дальше больше
+// дроны на обычных волнах: с 41-й один, дальше больше (в выживании не более 4)
 function waveDroneCount(n){
   if(n < 41 || isBossWave(n)) return 0;
-  return 1 + Math.floor((n-41)/20); // 41-60: 1, 61-80: 2, 81-99: 3
+  return Math.min(4, 1 + Math.floor((n-41)/20)); // 41-60: 1, 61-80: 2, 81-99: 3
 }
 
 // ---------- game state ----------
@@ -722,7 +726,8 @@ function spawnEnemy(type, waveN){
 function spawnBoss(){
   const num = bossNumOf(state.wave);
   const final = state.wave === TOTAL_WAVES;
-  const def = BOSS_DEFS[num-1] || BOSS_DEFS[0];
+  // в выживании (после 100-й) боссы идут по второму кругу, но сильнее
+  const def = BOSS_DEFS[(num-1) % BOSS_DEFS.length];
   const hp = Math.round((380 + 240*num + (final ? 400 : 0)) * (def.hpMult || 1));
   boss = {
     num, final, def, x: W+140, y: H/2, r: final ? 62 : 52, hp, maxHp:hp,
@@ -732,7 +737,7 @@ function spawnBoss(){
     dashT: 5, dashing: 0, dashA: 0, droneT: 5,
     blink:0, nextBlink: rand(1,3), entering:true, enraged:false
   };
-  $('bosslabel').textContent = def.name + (final ? '' : ' · ' + num + '/' + BOSS_COUNT);
+  $('bosslabel').textContent = def.name + (final ? '' : num > BOSS_COUNT ? ' · №' + num : ' · ' + num + '/' + BOSS_COUNT);
   $('bossbarwrap').hidden = false;
   minionTimer = 6;
 }
@@ -757,15 +762,16 @@ function startWave(n){
   state.wave = n;
   saveCheckpoint(n);
   if(waveClearT){ clearTimeout(waveClearT); waveClearT = null; }
+  const surv = n > TOTAL_WAVES; // режим выживания после сотой
   if(isBossWave(n)){
-    $('wavetext').textContent = 'Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС';
+    $('wavetext').textContent = surv ? ('Выживание · волна ' + n + ' · БОСС') : ('Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС');
     waveBanner = { text: n === TOTAL_WAVES ? 'ФИНАЛЬНЫЙ БОСС!' : ('БОСС ' + bossNumOf(n) + '!'), t: 2.2 };
     spawnBoss();
   } else {
-    $('wavetext').textContent = 'Волна ' + n + ' / ' + TOTAL_WAVES;
+    $('wavetext').textContent = surv ? ('Выживание · волна ' + n) : ('Волна ' + n + ' / ' + TOTAL_WAVES);
     // на входе в новую декаду объявляем биом
     waveBanner = n % 10 === 1
-      ? { text: 'ВОЛНА ' + n + ' · ' + biomeFor(n).name, t: 2.6 }
+      ? { text: (n === TOTAL_WAVES + 1 ? 'ВЫЖИВАНИЕ! · ' : 'ВОЛНА ' + n + ' · ') + biomeFor(n).name, t: 2.6 }
       : { text: 'ВОЛНА ' + n, t: 2.2 };
     waveComposition(n).forEach((type,i)=> setTimeout(()=>{ if(state.mode==='play') spawnEnemy(type, n); }, i*420));
     const dn = waveDroneCount(n);
@@ -796,7 +802,7 @@ function resetGame(wave, score, hp){
   player.hull = -Math.PI/2; player.turret = -Math.PI/2; player.cd = 0;
   player.shieldT = 0; player.rapidT = 0; player.tripleT = 0; player.superCharge = 0;
   pet.x = player.x - 50; pet.y = player.y; pet.cd = 0; pet.t = 0;
-  state.score = score ?? 0; state.shake = 0; state.freezeT = 0; state.magnetT = 0;
+  state.score = score ?? 0; state.shake = 0; state.freezeT = 0; state.magnetT = 0; state.awardedFor = 0;
   $('bossbarwrap').hidden = true;
   startWave(wave ?? 1);
 }
@@ -837,7 +843,7 @@ function onBossKilled(){
   state.score += sc;
   addFloat(b.x, b.y, '+' + sc);
   $('bossbarwrap').hidden = true;
-  if(state.wave >= TOTAL_WAVES){ endGame(true); return; }
+  if(state.wave === TOTAL_WAVES){ endGame(true); return; } // победа в кампании; в выживании едем дальше
   // награда: пересчитываем все перки на новый уровень и лечим
   applyProgress(state.wave + 1);
   player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp*0.5));
@@ -854,8 +860,9 @@ function endGame(win){
   $('bossbarwrap').hidden = true;
   if(state.score > best){ best = state.score; saveBest(best); }
   const rec = 'Рекорд: ' + best;
-  // монеты за бой (10 очков = 1 монета) и место в рейтинге
-  const earned = Math.round(state.score / 10);
+  // монеты за бой (10 очков = 1 монета), без повторного начисления после победы
+  const earned = Math.max(0, Math.round((state.score - (state.awardedFor || 0)) / 10));
+  state.awardedFor = state.score;
   profile.coins += earned; saveProfile();
   const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave);
   const info = '+' + earned + ' 🪙' + (place ? ' · Место в рейтинге: ' + place : '');
@@ -867,7 +874,8 @@ function endGame(win){
     setOverlay('victory');
   } else {
     sfx.lose();
-    $('loseScore').textContent = 'Счёт: ' + state.score + ' · Волна ' + state.wave + ' / ' + TOTAL_WAVES;
+    $('loseScore').textContent = 'Счёт: ' + state.score + ' · ' +
+      (state.wave > TOTAL_WAVES ? 'Выживание, волна ' + state.wave : 'Волна ' + state.wave + ' / ' + TOTAL_WAVES);
     $('loseBest').textContent = rec;
     $('retryBtn').textContent = checkpoint > 1 ? ('С ВОЛНЫ ' + checkpoint) : 'ЕЩЁ РАЗ';
     $('retryStartBtn').hidden = checkpoint <= 1;
@@ -2140,6 +2148,16 @@ $('contBtn').addEventListener('click', ()=> startGame(checkpoint));
 $('retryBtn').addEventListener('click', ()=> startGame(checkpoint > 1 ? checkpoint : 1));
 $('retryStartBtn').addEventListener('click', ()=> startGame());
 $('winBtn').addEventListener('click', ()=> startGame());
+$('winSurviveBtn').addEventListener('click', ()=>{
+  // продолжаем тот же бой: счёт и прокачка остаются, волны идут дальше
+  state.mode = 'play';
+  setOverlay(null);
+  applyProgress(TOTAL_WAVES + 1);
+  player.hp = player.maxHp;
+  player.superCharge = 0;
+  bullets = []; enemies = []; pickups = []; drones = []; bombs = [];
+  startWave(TOTAL_WAVES + 1);
+});
 $('resumeBtn').addEventListener('click', resumeGame);
 $('quitBtn').addEventListener('click', ()=>{
   state.mode = 'menu';

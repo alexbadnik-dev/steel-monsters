@@ -54,6 +54,7 @@ html{height:100%}
 .overlay{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;gap:12px;background:radial-gradient(ellipse at center,#1c232bd9 0%,#10141af2 100%);text-align:center;
   padding:calc(env(safe-area-inset-top,0px) + 18px) 16px calc(env(safe-area-inset-bottom,0px) + 18px);overflow-y:auto}
 /* безопасное центрирование: когда контент не влезает, работает прокрутка вместо обрезки */
+.overlay > *{flex-shrink:0} /* не давать flex сжимать строки друг в друга */
 .overlay > :first-child{margin-top:auto}
 .overlay > :last-child{margin-bottom:auto}
 .overlay h1{margin:0;font-size:clamp(24px,6.6vw,58px);letter-spacing:2px;color:var(--accent);text-shadow:0 4px 0 #1c5c33,0 8px 24px #000}
@@ -253,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v22';
+const GAME_VERSION = 'v23';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -316,7 +317,14 @@ const SKINS = [
   { id:'stealth', name:'Стелс',      cost:700,  hull:'#3c4650', dark:'#161b20', fx:{ body:'stealth', eyeColor:'#6fd9e8' } },
   { id:'robot',   name:'Робот',      cost:800,  hull:'#9db0bf', dark:'#5c7183', fx:{ turret:'box', antenna:true, eyeColor:'#ffd84d' } },
   { id:'police',  name:'Полиция',    cost:850,  hull:'#e8eef2', dark:'#2d5f8a', fx:{ siren:true } },
+  // герои (вдохновлено известной вселенной)
+  { id:'iron',    name:'Железный',   cost:900,  hull:'#b3202a', dark:'#6e1118', fx:{ pattern:'reactor', turretColor:'#e8b33a' } },
+  { id:'spider',  name:'Паучок',     cost:900,  hull:'#d12b2b', dark:'#1c2d6e', fx:{ pattern:'web', eyeColor:'#f3f6f8' } },
   { id:'ghost',   name:'Призрак',    cost:900,  hull:'#e8eef2', dark:'#7d8a94', fx:{ alpha:0.55, glow:'#bfe8ff' } },
+  { id:'gamma',   name:'Гигант',     cost:1000, hull:'#53b84a', dark:'#5e3f8f', fx:{ barrel:'heavy' } },
+  { id:'captain', name:'Капитан',    cost:1000, hull:'#2d5f8a', dark:'#16304a', fx:{ pattern:'star', turretColor:'#b3202a' } },
+  { id:'thunder', name:'Громовержец',cost:1200, hull:'#8fa6b8', dark:'#4e2a66', fx:{ pattern:'bolt', glow:'#9fd1ff' } },
+  { id:'panther', name:'Пантера',    cost:1400, hull:'#23262b', dark:'#0e1013', fx:{ body:'stealth', pattern:'claws', eyeColor:'#b89be0' } },
   { id:'lava',    name:'Лава',       cost:1000, hull:'#5a2c20', dark:'#2b1410', fx:{ pattern:'cracks', glow:'#ff6a3a' } },
   { id:'neon',    name:'Неон',       cost:1100, hull:'#1c2228', dark:'#0e1216', fx:{ glow:'#2de0ff', eyeColor:'#2de0ff' } },
   { id:'ufo',     name:'НЛО',        cost:1200, hull:'#7ee0d2', dark:'#2d7a6e', fx:{ body:'hover', glow:'#7ee0d2' } },
@@ -1001,6 +1009,7 @@ function setOverlay(id){
   for(const o of OVERLAYS) $(o).hidden = (o!==id);
   $('hud').hidden = (id!==null && id!=='pause');
   $('pauseBtn').hidden = !(id===null);
+  if(id !== null){ waveBanner.t = 0; $('wavetitle').style.opacity = 0; }
 }
 
 function startGame(wave, score, hp){
@@ -1899,6 +1908,58 @@ function drawTank(t, opts, c){
         for(const [bx,by] of [[-14,-9],[14,9],[-14,9],[14,-9]]){
           c.beginPath(); c.arc(bx*s, by*s, 2.6*s, 0, Math.PI*2); c.fill();
         }
+      } else if(fx.pattern === 'reactor'){
+        // светящийся реактор в центре корпуса + золотые пластины
+        c.fillStyle = '#e8b33a';
+        c.fillRect(-21*s, -4*s, 8*s, 8*s);
+        c.fillRect(13*s, -4*s, 8*s, 8*s);
+        c.globalAlpha = baseA * (0.65 + 0.35*Math.sin(state.time*5));
+        c.strokeStyle = '#8fe0f5'; c.lineWidth = 2.5*s;
+        c.beginPath(); c.arc(-2*s, 0, 6.5*s, 0, Math.PI*2); c.stroke();
+        c.globalAlpha = baseA;
+        c.fillStyle = '#d6f4ff';
+        c.beginPath(); c.arc(-2*s, 0, 4*s, 0, Math.PI*2); c.fill();
+      } else if(fx.pattern === 'web'){
+        // паутина на корпусе
+        c.strokeStyle = 'rgba(16,16,28,0.6)'; c.lineWidth = 1.6*s; c.lineCap = 'round';
+        for(let i=0;i<8;i++){
+          const a = i*Math.PI/4;
+          c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.cos(a)*22*s, Math.sin(a)*14*s); c.stroke();
+        }
+        for(const rr of [6, 12, 18]){
+          c.beginPath(); c.ellipse(0, 0, rr*s, rr*0.62*s, 0, 0, Math.PI*2); c.stroke();
+        }
+      } else if(fx.pattern === 'star'){
+        // белая звезда в красном круге
+        c.fillStyle = '#f3f6f8';
+        c.beginPath(); c.arc(-2*s, 0, 9*s, 0, Math.PI*2); c.fill();
+        c.fillStyle = '#b3202a';
+        c.beginPath(); c.arc(-2*s, 0, 7*s, 0, Math.PI*2); c.fill();
+        c.fillStyle = '#f3f6f8';
+        c.beginPath();
+        for(let i=0;i<10;i++){
+          const a = -Math.PI/2 + i*Math.PI/5;
+          const rr = (i % 2 === 0 ? 6 : 2.6)*s;
+          c.lineTo(-2*s + Math.cos(a)*rr, Math.sin(a)*rr);
+        }
+        c.closePath(); c.fill();
+      } else if(fx.pattern === 'bolt'){
+        // золотая молния
+        c.fillStyle = '#ffd84d';
+        c.beginPath();
+        c.moveTo(4*s, -13*s); c.lineTo(-7*s, 1*s); c.lineTo(-1*s, 1*s);
+        c.lineTo(-5*s, 13*s); c.lineTo(8*s, -2*s); c.lineTo(1*s, -2*s);
+        c.closePath(); c.fill();
+        c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 1.2*s; c.stroke();
+      } else if(fx.pattern === 'claws'){
+        // следы когтей
+        c.strokeStyle = 'rgba(200,210,218,0.75)'; c.lineWidth = 2.2*s; c.lineCap = 'round';
+        for(const off of [-6, 0, 6]){
+          c.beginPath();
+          c.moveTo((-10+off)*s, -11*s);
+          c.quadraticCurveTo((2+off)*s, 0, (-4+off)*s, 12*s);
+          c.stroke();
+        }
       } else if(fx.pattern === 'cracks'){
         c.strokeStyle = fx.glow || '#ff6a3a'; c.lineWidth = 2*s; c.lineCap = 'round';
         c.globalAlpha = baseA * (0.65 + 0.35*Math.sin(state.time*5));
@@ -2783,8 +2844,8 @@ function renderDiffRow(){
   }
   const d = currentDiff();
   $('diffDesc').textContent = d === DIFFS.norm
-    ? 'Обычный бой · кубки ×1'
-    : 'Враги: HP ×' + d.hp + ', урон ×' + d.dmg + ' · монеты ×' + d.coins + ' · кубки ×' + d.cups;
+    ? 'Обычный бой · 🏆 ×1'
+    : 'HP×' + d.hp + ' · урон×' + d.dmg + ' · 🪙×' + d.coins + ' · 🏆×' + d.cups;
 }
 
 // ---------- выбор музыки ----------

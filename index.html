@@ -96,9 +96,13 @@ html{height:100%}
 .skbtn.equipped{background:#2a3b31;color:var(--accent);cursor:default}
 .skbtn:disabled{opacity:.45;cursor:default}
 .ver{margin:0;font-size:11px;color:#5c6a76;letter-spacing:1px}
-.classbtn{pointer-events:auto;cursor:pointer;border:2px solid #39434d;border-radius:10px;background:#141a20;
-  color:var(--ink-dim);font-family:inherit;font-size:13px;padding:9px 14px}
+.classbtn{pointer-events:auto;cursor:pointer;border:2px solid #39434d;border-radius:12px;background:#141a20;
+  color:var(--ink-dim);font-family:inherit;font-size:12px;padding:8px 12px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;min-width:96px}
 .classbtn.sel{border-color:var(--accent);color:var(--accent);background:#1a2b20}
+.classbtn.locked{opacity:.8}
+.clsprev{width:52px;height:52px}
+.clsprice{font-size:11px;color:var(--gold)}
 .classdesc{margin:0;font-size:12px;color:var(--ink-dim);min-height:15px}
 .colorrow{display:flex;gap:10px;align-items:center;justify-content:center;pointer-events:auto}
 .colorrow label{font-size:13px;color:var(--ink-dim)}
@@ -132,6 +136,36 @@ html{height:100%}
 <div class="overlay" id="menu">
   <h1>СТАЛЬНЫЕ&nbsp;МОНСТРЫ</h1>
   <p>Пробейся сквозь 100 волн и одолей 10 боссов! Каждый побеждённый босс делает твой танк сильнее.</p>
+  <input id="nameInput" maxlength="16" placeholder="Имя танкиста" autocomplete="off">
+  <div class="menurow" id="classRow"></div>
+  <p class="classdesc" id="classDesc"></p>
+  <p class="record" id="menuBest" hidden></p>
+  <button class="btn" id="startBtn">В БОЙ!</button>
+  <button class="btn gray" id="contBtn" hidden></button>
+  <div class="menurow">
+    <button class="btn gray small" id="shopBtn">🛒 МАГАЗИН</button>
+    <button class="btn gray small" id="boardBtn">🏆 РЕЙТИНГ</button>
+    <button class="btn gray small" id="helpBtn">❓ ОПИСАНИЕ</button>
+  </div>
+  <p class="record" id="coinsText"></p>
+  <div class="menurow" id="musicRow"></div>
+  <p class="ver" id="verText"></p>
+</div>
+
+<div class="overlay" id="shop" hidden>
+  <h1 class="gold">МАГАЗИН</h1>
+  <p id="shopCoins"></p>
+  <div class="colorrow">
+    <label for="skinColor">Свой цвет:</label>
+    <input type="color" id="skinColor" value="#58d97b">
+    <button class="btn gray small" id="colorReset">СБРОС</button>
+  </div>
+  <div class="shopgrid" id="shopGrid"></div>
+  <button class="btn gray" id="shopBack">НАЗАД</button>
+</div>
+
+<div class="overlay" id="help" hidden>
+  <h1>КАК ИГРАТЬ</h1>
   <div class="keys" id="keysDesktop">
     <span><b>WASD</b> — движение</span>
     <span><b>Мышь</b> — прицел</span>
@@ -149,31 +183,10 @@ html{height:100%}
     <span><span class="chip" style="background:#f1c40f">⚡</span>скорострел</span>
     <span><span class="chip" style="background:#ff9f43">3×</span>тройной</span>
   </div>
-  <input id="nameInput" maxlength="16" placeholder="Имя танкиста" autocomplete="off">
-  <div class="menurow" id="classRow"></div>
-  <p class="classdesc" id="classDesc"></p>
-  <p class="record" id="menuBest" hidden></p>
-  <button class="btn" id="startBtn">В БОЙ!</button>
-  <button class="btn gray" id="contBtn" hidden></button>
-  <div class="menurow">
-    <button class="btn gray small" id="shopBtn">🛒 МАГАЗИН</button>
-    <button class="btn gray small" id="boardBtn">🏆 РЕЙТИНГ</button>
-  </div>
-  <p class="record" id="coinsText"></p>
-  <div class="menurow" id="musicRow"></div>
-  <p class="ver" id="verText"></p>
-</div>
-
-<div class="overlay" id="shop" hidden>
-  <h1 class="gold">МАГАЗИН</h1>
-  <p id="shopCoins"></p>
-  <div class="colorrow">
-    <label for="skinColor">Свой цвет:</label>
-    <input type="color" id="skinColor" value="#58d97b">
-    <button class="btn gray small" id="colorReset">СБРОС</button>
-  </div>
-  <div class="shopgrid" id="shopGrid"></div>
-  <button class="btn gray" id="shopBack">НАЗАД</button>
+  <p>Боссы — каждая 10-я волна, у каждого свой характер. За босса танк получает перки: здоровье, урон, перезарядку, а с третьего — регенерацию.</p>
+  <p>Берегись: снайпер целится красным лазером, камикадзе взрывается при контакте, миномётчик и дроны бомбят по красным кругам — выезжай из них! Медик с крестом лечит своих — выбивай его первым.</p>
+  <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины и классы танков.</p>
+  <button class="btn gray" id="helpBack">НАЗАД</button>
 </div>
 
 <div class="overlay" id="board" hidden>
@@ -213,7 +226,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v11';
+const GAME_VERSION = 'v12';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -287,9 +300,9 @@ function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
 
 // ---------- классы танка ----------
 const CLASSES = {
-  fast:  { name:'ШУСТРЫЙ',   icon:'🏎', speed:265, cd:0.16, rapidCd:0.08, dmg:10, hp:85,  br:3.5, desc:'Скорость и скорострельность, меньше урон и броня' },
-  uni:   { name:'УНИВЕРСАЛ', icon:'⚖️', speed:215, cd:0.24, rapidCd:0.11, dmg:15, hp:100, br:4,   desc:'Сбалансированный боец' },
-  heavy: { name:'ТЯЖЁЛЫЙ',   icon:'🛡', speed:165, cd:0.40, rapidCd:0.20, dmg:30, hp:130, br:6,   desc:'Мощный урон и броня, но медленный' }
+  uni:   { name:'УНИВЕРСАЛ', cost:0,    speed:215, cd:0.24, rapidCd:0.11, dmg:15, hp:100, br:4,   scale:0.5,  desc:'Сбалансированный боец' },
+  fast:  { name:'ШУСТРЫЙ',   cost:1500, speed:265, cd:0.16, rapidCd:0.08, dmg:10, hp:85,  br:3.5, scale:0.42, desc:'Скорость и скорострельность, меньше урон и броня' },
+  heavy: { name:'ТЯЖЁЛЫЙ',   cost:3000, speed:165, cd:0.40, rapidCd:0.20, dmg:30, hp:130, br:6,   scale:0.62, desc:'Мощный урон и броня, но медленный' }
 };
 function playerClass(){ return CLASSES[profile.tank] || CLASSES.uni; }
 
@@ -315,13 +328,17 @@ function loadProfile(){
       skins: Array.isArray(p.skins) ? p.skins.filter(s => typeof s === 'string') : ['green'],
       equipped: typeof p.equipped === 'string' ? p.equipped : 'green',
       tank: ['fast','uni','heavy'].includes(p.tank) ? p.tank : 'uni',
+      classes: Array.isArray(p.classes) ? p.classes.filter(c => typeof c === 'string') : ['uni'],
       customColor: /^#[0-9a-f]{6}$/i.test(p.customColor || '') ? p.customColor : null
     };
-  }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', customColor:null }; }
+  }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', classes:['uni'], customColor:null }; }
 }
 const profile = loadProfile();
 if(!profile.skins.includes('green')) profile.skins.push('green');
 if(!profile.skins.includes(profile.equipped)) profile.equipped = 'green';
+if(!profile.classes.includes('uni')) profile.classes.push('uni');
+// кто уже играл этим классом до введения цен — оставляем бесплатно
+if(!profile.classes.includes(profile.tank)) profile.classes.push(profile.tank);
 function saveProfile(){ try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){} }
 
 // ---------- рейтинг (топ-10 на этом устройстве) ----------
@@ -744,7 +761,7 @@ function resetGame(wave, score, hp){
   startWave(wave ?? 1);
 }
 
-const OVERLAYS = ['menu','pause','gameover','victory','shop','board'];
+const OVERLAYS = ['menu','pause','gameover','victory','shop','board','help'];
 function setOverlay(id){
   for(const o of OVERLAYS) $(o).hidden = (o!==id);
   $('hud').hidden = (id!==null && id!=='pause');
@@ -1944,6 +1961,8 @@ function renderBoard(){
 }
 $('boardBtn').addEventListener('click', ()=>{ renderBoard(); setOverlay('board'); });
 $('boardBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
+$('helpBtn').addEventListener('click', ()=>{ setOverlay('help'); });
+$('helpBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
 
 // ---------- имя игрока ----------
 $('nameInput').addEventListener('input', e=>{
@@ -1976,13 +1995,40 @@ function renderMusicRow(){
 function renderClassRow(){
   const row = $('classRow');
   row.innerHTML = '';
+  const sk = playerSkin();
   for(const [id, cls] of Object.entries(CLASSES)){
+    const owned = profile.classes.includes(id);
     const b = document.createElement('button');
-    b.className = 'classbtn' + (profile.tank === id ? ' sel' : '');
-    b.textContent = cls.icon + ' ' + cls.name;
+    b.className = 'classbtn' + (profile.tank === id ? ' sel' : '') + (owned ? '' : ' locked');
+    // превью танка этого класса в текущем скине
+    const cv = document.createElement('canvas');
+    cv.width = 52; cv.height = 52; cv.className = 'clsprev';
+    const fx = Object.assign({}, sk.fx || {}, id === 'heavy' ? { barrel:'heavy' } : {});
+    drawTank({ x:26, y:28, hull:-Math.PI/2, turret:-Math.PI/2, blink:0 },
+             { hullColor: sk.hull, darkColor: sk.dark, scale: cls.scale, fx }, cv.getContext('2d'));
+    const nm = document.createElement('div');
+    nm.textContent = cls.name;
+    b.append(cv, nm);
+    if(!owned){
+      const pr = document.createElement('div');
+      pr.className = 'clsprice';
+      pr.textContent = '🔒 ' + cls.cost + ' 🪙';
+      b.append(pr);
+    }
     b.addEventListener('click', ()=>{
-      profile.tank = id; saveProfile();
-      renderClassRow();
+      if(owned){
+        profile.tank = id;
+      } else if(profile.coins >= cls.cost){
+        profile.coins -= cls.cost;
+        profile.classes.push(id);
+        profile.tank = id;
+        audio(); sfx.pickup();
+      } else {
+        $('classDesc').textContent = 'Нужно ' + cls.cost + ' 🪙 — зарабатывай очки в боях!';
+        return;
+      }
+      saveProfile();
+      updateMenuBest();
     });
     row.append(b);
   }

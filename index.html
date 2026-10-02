@@ -187,7 +187,10 @@ html{height:100%}
     <span><span class="chip" style="background:#6fd9e8">Щ</span>щит</span>
     <span><span class="chip" style="background:#f1c40f">⚡</span>скорострел</span>
     <span><span class="chip" style="background:#ff9f43">3×</span>тройной</span>
+    <span><span class="chip" style="background:#bfe8f5">❄</span>заморозка</span>
+    <span><span class="chip" style="background:#f3f6f8">🧲</span>магнит</span>
   </div>
+  <p>Бонусы можно прокачать в магазине: сильнее лечилка, дольше щит и скорострел, а тройной на максимуме превращается в ПЯТЬ стволов.</p>
   <p>Боссы — каждая 10-я волна, у каждого свой характер. За босса танк получает перки: здоровье, урон, перезарядку, а с третьего — регенерацию.</p>
   <p>Берегись: снайпер целится красным лазером, камикадзе взрывается при контакте, миномётчик и дроны бомбят по красным кругам — выезжай из них! Медик с крестом лечит своих — выбивай его первым.</p>
   <p>⚡ Супер-способность «Ударная волна» заряжается убийствами (жёлтая полоска под здоровьем): сметает все вражеские снаряды и бомбы и бьёт всех вокруг. Активация — <b>Q</b> на компьютере или жёлтая кнопка над огнём на телефоне.</p>
@@ -232,7 +235,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v14';
+const GAME_VERSION = 'v15';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -311,6 +314,18 @@ const PETS = [
 ];
 function petById(id){ return PETS.find(p => p.id === id) || null; }
 
+// ---------- прокачка бонусов (по 3 уровня) ----------
+const UPGRADES = [
+  { id:'med',    name:'Лечилка',    chip:'＋', color:'#f3f6f8', ink:'#101820', costs:[500,1000,2000],
+    desc: l => 'Лечит ' + (25 + l*10) + ' HP' },
+  { id:'shield', name:'Щит',        chip:'Щ',  color:'#6fd9e8', ink:'#0e3a44', costs:[500,1000,2000],
+    desc: l => 'Держится ' + (6 + l*1.5) + ' сек' },
+  { id:'rapid',  name:'Скорострел', chip:'⚡', color:'#f1c40f', ink:'#5c4a02', costs:[600,1200,2400],
+    desc: l => 'Держится ' + (6 + l*1.5) + ' сек' },
+  { id:'triple', name:'Тройной',    chip:'3×', color:'#ff9f43', ink:'#5e3208', costs:[600,1200,2400],
+    desc: l => (l >= 3 ? 'ПЯТЬ стволов! · ' : '') + 'Держится ' + (8 + l*2) + ' сек' + (l === 2 ? ' · на 3 ур. — 5 стволов!' : '') }
+];
+
 // ---------- классы танка ----------
 const CLASSES = {
   uni:   { name:'УНИВЕРСАЛ', cost:0,    speed:215, cd:0.24, rapidCd:0.11, dmg:15, hp:100, br:4,   scale:0.5,  desc:'Сбалансированный боец' },
@@ -344,9 +359,16 @@ function loadProfile(){
       classes: Array.isArray(p.classes) ? p.classes.filter(c => typeof c === 'string') : ['uni'],
       pets: Array.isArray(p.pets) ? p.pets.filter(c => typeof c === 'string') : [],
       pet: ['bot','heal'].includes(p.pet) ? p.pet : null,
+      upg: (u => ({
+        med:    Math.min(3, Math.max(0, (u.med|0))),
+        shield: Math.min(3, Math.max(0, (u.shield|0))),
+        rapid:  Math.min(3, Math.max(0, (u.rapid|0))),
+        triple: Math.min(3, Math.max(0, (u.triple|0)))
+      }))(p.upg || {}),
       customColor: /^#[0-9a-f]{6}$/i.test(p.customColor || '') ? p.customColor : null
     };
-  }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', classes:['uni'], pets:[], pet:null, customColor:null }; }
+  }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', classes:['uni'], pets:[], pet:null,
+                      upg:{ med:0, shield:0, rapid:0, triple:0 }, customColor:null }; }
 }
 const profile = loadProfile();
 if(!profile.skins.includes('green')) profile.skins.push('green');
@@ -643,7 +665,7 @@ function waveDroneCount(n){
 }
 
 // ---------- game state ----------
-const state = { mode:'menu', score:0, wave:1, shake:0, time:0 };
+const state = { mode:'menu', score:0, wave:1, shake:0, time:0, freezeT:0, magnetT:0 };
 const player = {
   x:0, y:0, r:22, hp:100, maxHp:100, dmg:15, speed:215, hull:0, turret:0, cd:0,
   blink:0, nextBlink:2, shieldT:0, rapidT:0, tripleT:0, trackT:0, superCharge:0
@@ -774,7 +796,7 @@ function resetGame(wave, score, hp){
   player.hull = -Math.PI/2; player.turret = -Math.PI/2; player.cd = 0;
   player.shieldT = 0; player.rapidT = 0; player.tripleT = 0; player.superCharge = 0;
   pet.x = player.x - 50; pet.y = player.y; pet.cd = 0; pet.t = 0;
-  state.score = score ?? 0; state.shake = 0;
+  state.score = score ?? 0; state.shake = 0; state.freezeT = 0; state.magnetT = 0;
   $('bossbarwrap').hidden = true;
   startWave(wave ?? 1);
 }
@@ -961,7 +983,10 @@ function leaveTrack(t, scale){
 
 // ---------- shooting ----------
 function playerShoot(){
-  const offs = player.tripleT > 0 ? [-0.16, 0, 0.16] : [0];
+  // тройной; на максимальной прокачке — пять стволов
+  const offs = player.tripleT > 0
+    ? (profile.upg.triple >= 3 ? [-0.3, -0.15, 0, 0.15, 0.3] : [-0.16, 0, 0.16])
+    : [0];
   for(const off of offs){
     const a = player.turret + off;
     bullets.push({ x:player.x + Math.cos(a)*34, y:player.y + Math.sin(a)*34,
@@ -1099,7 +1124,9 @@ const PICKS = [
   { type:'med',    w:4 },
   { type:'shield', w:2 },
   { type:'rapid',  w:2 },
-  { type:'triple', w:2 }
+  { type:'triple', w:2 },
+  { type:'freeze', w:1.4 },
+  { type:'magnet', w:1.4 }
 ];
 function dropPickup(x, y){
   if(Math.random() > 0.32) return;
@@ -1112,10 +1139,13 @@ function dropPickup(x, y){
 function applyPickup(p){
   sfx.pickup();
   const bb = player.buffBonus || 0; // перк: бонусы живут дольше с каждым боссом
-  if(p.type === 'med'){ player.hp = Math.min(player.maxHp, player.hp + 25); addFloat(p.x, p.y, '+25', '#6fe58f'); }
-  else if(p.type === 'shield'){ player.shieldT = 6 + bb; addFloat(p.x, p.y, 'ЩИТ!', '#6fd9e8'); }
-  else if(p.type === 'rapid'){ player.rapidT = 6 + bb; addFloat(p.x, p.y, 'СКОРОСТРЕЛ!', '#f1c40f'); }
-  else if(p.type === 'triple'){ player.tripleT = 8 + bb; addFloat(p.x, p.y, 'ТРОЙНОЙ!', '#ff9f43'); }
+  const U = profile.upg;            // прокачка бонусов из магазина
+  if(p.type === 'med'){ const h = 25 + U.med*10; player.hp = Math.min(player.maxHp, player.hp + h); addFloat(p.x, p.y, '+' + h, '#6fe58f'); }
+  else if(p.type === 'shield'){ player.shieldT = 6 + bb + U.shield*1.5; addFloat(p.x, p.y, 'ЩИТ!', '#6fd9e8'); }
+  else if(p.type === 'rapid'){ player.rapidT = 6 + bb + U.rapid*1.5; addFloat(p.x, p.y, 'СКОРОСТРЕЛ!', '#f1c40f'); }
+  else if(p.type === 'triple'){ player.tripleT = 8 + bb + U.triple*2; addFloat(p.x, p.y, U.triple >= 3 ? 'ПЯТЕРНОЙ!' : 'ТРОЙНОЙ!', '#ff9f43'); }
+  else if(p.type === 'freeze'){ state.freezeT = 3.5; addFloat(p.x, p.y, 'ЗАМОРОЗКА!', '#9fd9e8'); }
+  else if(p.type === 'magnet'){ state.magnetT = 10; addFloat(p.x, p.y, 'МАГНИТ!', '#f78fb3'); }
 }
 
 // ---------- update ----------
@@ -1224,9 +1254,14 @@ function update(dt){
     }
   }
 
+  // заморозка: враги, босс, дроны и бомбы стоят
+  state.freezeT = Math.max(0, state.freezeT - dt);
+  state.magnetT = Math.max(0, state.magnetT - dt);
+  const frozen = state.freezeT > 0;
+
   // enemies AI
   let anyDead = false;
-  for(const e of enemies){
+  if(!frozen) for(const e of enemies){
     const T = ETYPES[e.type];
     const a = angTo(e.x,e.y,player.x,player.y);
     const d = dist(e.x,e.y,player.x,player.y);
@@ -1326,7 +1361,7 @@ function update(dt){
   }
 
   // boss AI
-  if(boss){
+  if(boss && !frozen){
     boss.t += dt;
     if(boss.entering){
       boss.x -= 90*dt;
@@ -1386,7 +1421,7 @@ function update(dt){
   }
 
   // дроны: кружат над игроком и сбрасывают бомбы
-  for(const d of drones){
+  if(!frozen) for(const d of drones){
     d.t += dt;
     const a = angTo(d.x, d.y, player.x, player.y);
     const dd = dist(d.x, d.y, player.x, player.y);
@@ -1406,7 +1441,7 @@ function update(dt){
     }
   }
   // бомбы: телеграф, затем взрыв по области
-  for(let i = bombs.length-1; i >= 0; i--){
+  if(!frozen) for(let i = bombs.length-1; i >= 0; i--){
     const bm = bombs[i];
     bm.t += dt;
     if(bm.t >= bm.fuse){
@@ -1462,6 +1497,12 @@ function update(dt){
   for(let i = pickups.length-1; i >= 0; i--){
     const m = pickups[i]; m.t += dt;
     if(m.t > 12){ pickups.splice(i,1); continue; }
+    // магнит: бонусы плывут к танку
+    if(state.magnetT > 0){
+      const ma = angTo(m.x, m.y, player.x, player.y);
+      m.x += Math.cos(ma)*260*dt;
+      m.y += Math.sin(ma)*260*dt;
+    }
     if(dist(m.x,m.y,player.x,player.y) < player.r + 17){
       applyPickup(m);
       pickups.splice(i,1);
@@ -1498,6 +1539,8 @@ function update(dt){
   sbar.classList.toggle('ready', player.superCharge >= 1);
   const fx = [];
   if(player.superCharge >= 1) fx.push(IS_TOUCH ? '⚡ Супер готов!' : '⚡ Супер готов — Q');
+  if(state.freezeT > 0) fx.push('❄ Заморозка ' + Math.ceil(state.freezeT));
+  if(state.magnetT > 0) fx.push('🧲 Магнит ' + Math.ceil(state.magnetT));
   if(player.shieldT > 0) fx.push('Щит ' + Math.ceil(player.shieldT));
   if(player.rapidT > 0) fx.push('Скорострел ' + Math.ceil(player.rapidT));
   if(player.tripleT > 0) fx.push('Тройной ' + Math.ceil(player.tripleT));
@@ -1797,6 +1840,22 @@ function drawPickup(m){
     ctx.beginPath();
     ctx.moveTo(2,-9); ctx.lineTo(-6,2); ctx.lineTo(-1,2); ctx.lineTo(-3,9); ctx.lineTo(6,-2); ctx.lineTo(1,-2);
     ctx.closePath(); ctx.fill();
+  } else if(m.type === 'freeze'){
+    ctx.fillStyle = '#bfe8f5'; rrect(-13, -13, 26, 26, 6); ctx.fill();
+    ctx.strokeStyle = '#1d6a8a'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    for(let i=0;i<3;i++){
+      const a = i*Math.PI/3;
+      ctx.beginPath();
+      ctx.moveTo(-Math.cos(a)*8, -Math.sin(a)*8);
+      ctx.lineTo(Math.cos(a)*8, Math.sin(a)*8);
+      ctx.stroke();
+    }
+  } else if(m.type === 'magnet'){
+    ctx.fillStyle = '#f3f6f8'; rrect(-13, -13, 26, 26, 6); ctx.fill();
+    ctx.strokeStyle = '#e84c3d'; ctx.lineWidth = 5; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.arc(0, -1, 6, 0, Math.PI); ctx.stroke();
+    ctx.fillStyle = '#9db0bf';
+    ctx.fillRect(-8.5, -8, 5, 5); ctx.fillRect(3.5, -8, 5, 5);
   } else {
     ctx.fillStyle = '#ff9f43'; rrect(-13, -13, 26, 26, 6); ctx.fill();
     ctx.fillStyle = '#5e3208';
@@ -1927,6 +1986,17 @@ function render(){
       drawTank(player, { hullColor:sk.hull, darkColor:sk.dark, scale:1, blink:player.blink, shield:player.shieldT>0, fx:sk.fx });
       if(profile.pet) drawPet(ctx, pet.x, pet.y + Math.sin(pet.t*6)*2, profile.pet, pet.a, pet.t);
     }
+  }
+
+  // заморозка: ледяные кольца на застывших
+  if(state.freezeT > 0 && state.mode !== 'menu'){
+    ctx.strokeStyle = '#9fd9e8';
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.45 + 0.25*Math.sin(state.time*6);
+    for(const e of enemies){ ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 9, 0, Math.PI*2); ctx.stroke(); }
+    for(const d of drones){ ctx.beginPath(); ctx.arc(d.x, d.y, d.r + 7, 0, Math.PI*2); ctx.stroke(); }
+    if(boss){ ctx.beginPath(); ctx.arc(boss.x, boss.y, boss.r + 12, 0, Math.PI*2); ctx.stroke(); }
+    ctx.globalAlpha = 1;
   }
 
   // enemy HP bars
@@ -2151,6 +2221,42 @@ function renderShop(){
       });
     }
     card.append(prev, nm, ds, btn);
+    grid.append(card);
+  }
+
+  // ---- прокачка бонусов ----
+  const hdr2 = document.createElement('div');
+  hdr2.style.cssText = 'width:100%;font-size:14px;color:var(--ink-dim);letter-spacing:2px;margin-top:8px';
+  hdr2.textContent = '— ПРОКАЧКА БОНУСОВ —';
+  grid.append(hdr2);
+  for(const u of UPGRADES){
+    const lvl = profile.upg[u.id];
+    const card = document.createElement('div'); card.className = 'skincard';
+    const chip = document.createElement('div');
+    chip.style.cssText = 'width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;' +
+      'font-size:20px;background:' + u.color + ';color:' + u.ink;
+    chip.textContent = u.chip;
+    const nm = document.createElement('div'); nm.className = 'nm';
+    nm.textContent = u.name + ' ' + '●'.repeat(lvl) + '○'.repeat(3 - lvl);
+    const ds = document.createElement('div');
+    ds.style.cssText = 'font-size:10px;color:var(--ink-dim);line-height:1.3';
+    ds.textContent = u.desc(lvl);
+    const btn = document.createElement('button'); btn.className = 'skbtn';
+    if(lvl >= 3){
+      btn.textContent = 'МАКС'; btn.classList.add('equipped'); btn.disabled = true;
+    } else {
+      const cost = u.costs[lvl];
+      btn.textContent = cost + ' 🪙';
+      btn.disabled = profile.coins < cost;
+      btn.addEventListener('click', ()=>{
+        if(profile.coins < cost) return;
+        profile.coins -= cost;
+        profile.upg[u.id]++;
+        saveProfile(); audio(); sfx.pickup();
+        renderShop();
+      });
+    }
+    card.append(chip, nm, ds, btn);
     grid.append(card);
   }
 }

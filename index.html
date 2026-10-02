@@ -149,6 +149,7 @@ html{height:100%}
   <button class="btn gray" id="contBtn" hidden></button>
   <div class="menurow">
     <button class="btn gray small" id="shopBtn">🛒 МАГАЗИН</button>
+    <button class="btn gray small" id="perksBtn">⚡ ПРОКАЧКА</button>
     <button class="btn gray small" id="boardBtn">🏆 РЕЙТИНГ</button>
     <button class="btn gray small" id="helpBtn">❓ ОПИСАНИЕ</button>
   </div>
@@ -167,6 +168,14 @@ html{height:100%}
   </div>
   <div class="shopgrid" id="shopGrid"></div>
   <button class="btn gray" id="shopBack">НАЗАД</button>
+</div>
+
+<div class="overlay" id="perks" hidden>
+  <h1 class="gold">ПРОКАЧКА</h1>
+  <p id="perkCoins"></p>
+  <p>Улучшай бонусы с поля боя — навсегда</p>
+  <div class="shopgrid" id="perkGrid"></div>
+  <button class="btn gray" id="perkBack">НАЗАД</button>
 </div>
 
 <div class="overlay" id="help" hidden>
@@ -201,7 +210,8 @@ html{height:100%}
 
 <div class="overlay" id="board" hidden>
   <h1>РЕЙТИНГ</h1>
-  <p>Лучшие бои на этом устройстве</p>
+  <p>1 волна = 1 🏆 · лучшие бои на этом устройстве</p>
+  <div class="menurow" id="boardTabs"></div>
   <div class="boardlist" id="boardList"></div>
   <button class="btn gray" id="boardBack">НАЗАД</button>
 </div>
@@ -238,7 +248,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v16';
+const GAME_VERSION = 'v17';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -390,11 +400,12 @@ function loadBoard(){
   }catch(e){ return []; }
 }
 let board = loadBoard();
-function submitScore(name, score, wave){
-  const entry = { name, score, wave, ts: Date.now() };
+// кубки: 1 волна = 1 🏆; сортируем по кубкам, при равенстве — по очкам
+function submitScore(name, score, wave, tank){
+  const entry = { name, score, wave, tank: tank || 'uni', ts: Date.now() };
   board.push(entry);
-  board.sort((a,b) => b.score - a.score);
-  board = board.slice(0, 10);
+  board.sort((a,b) => (b.wave|0) - (a.wave|0) || b.score - a.score);
+  board = board.slice(0, 30);
   try{ localStorage.setItem('sm_board', JSON.stringify(board)); }catch(e){}
   return board.indexOf(entry) + 1; // 0 — не вошёл в топ
 }
@@ -680,6 +691,61 @@ let drones = [], bombs = [];
 let boss = null;
 let waveBanner = { text:'', t:0 };
 let minionTimer = 0;
+// ---------- сюжет: вступление, главы после боссов, финал ----------
+const STORY = {
+  intro: [
+    'ГОД 2077',
+    'Армия ржавых машин захватила землю.',
+    'Ты — последний танк завода «Сталь».',
+    'Отбей 100 волн и верни мир людям!'
+  ],
+  bosses: [
+    ['ЖЕЛЕЗНЫЙ КУЛАК ПОВЕРЖЕН!', 'Первый генерал империи пал.', 'Путь в пустыню открыт.'],
+    ['ОХОТНИК БОЛЬШЕ НЕ ОХОТИТСЯ', 'Его рация замолчала навсегда.', 'Впереди — снежные равнины.'],
+    ['КРЕПОСТЬ ПАЛА!', 'Даже самая толстая броня не спасла.', 'Болота ждут героя.'],
+    ['ШЕРШЕНЬ РАЗБИЛСЯ', 'Его рой дронов осыпался с неба.', 'Ржавые земли дымятся впереди.'],
+    ['МОРОЗ РАСТАЯЛ', 'Половина пути пройдена!', 'Сквозь джунгли — к сердцу империи.'],
+    ['ПАУК ЗАПУТАЛСЯ', 'В собственных сетях.', 'Пепелище шепчет: осталось немного.'],
+    ['ФАНТОМ ИСЧЕЗ. НАВСЕГДА.', 'Призраков больше нет.', 'Лёд трещит под гусеницами.'],
+    ['ВУЛКАН ПОТУХ', 'Империя машин в панике.', 'Сумрак сгущается...'],
+    ['ШТОРМ УТИХ', 'Последний генерал уничтожен.', 'Впереди — тронный зал ИМПЕРАТОРА!']
+  ],
+  final: [
+    'ИМПЕРАТОР ПОВЕРЖЕН!',
+    'Империя машин пала.',
+    'Люди возвращаются в города.',
+    'Ты — герой. Легенда. Последний страж.',
+    '...но что это на горизонте?',
+    'Новые колонны. Без конца и края.',
+    'Война не окончена. Она бесконечна.'
+  ]
+};
+const story = { active:false, lines:[], t:0, done:null, finale:false, bossDef:null };
+function startStory(lines, done, opts){
+  story.active = true;
+  story.lines = lines;
+  story.t = 0;
+  story.done = done;
+  story.finale = !!(opts && opts.finale);
+  story.bossDef = (opts && opts.bossDef) || null;
+  state.mode = 'story';
+  waveBanner.t = 0; // убрать игровой баннер под заставкой
+  for(const o of OVERLAYS) $(o).hidden = true;
+  $('hud').hidden = true;
+  $('pauseBtn').hidden = true;
+}
+function endStory(){
+  if(!story.active || story.t < 0.7) return;
+  story.active = false;
+  const done = story.done;
+  story.done = null;
+  if(done) done();
+  if(state.mode === 'play'){
+    $('hud').hidden = false;
+    $('pauseBtn').hidden = false;
+  }
+}
+
 let waveClearT = null;
 function checkWaveClear(){
   if(isBossWave(state.wave) || state.mode !== 'play' || enemies.length || waveClearT) return;
@@ -807,7 +873,7 @@ function resetGame(wave, score, hp){
   startWave(wave ?? 1);
 }
 
-const OVERLAYS = ['menu','pause','gameover','victory','shop','board','help'];
+const OVERLAYS = ['menu','pause','gameover','victory','shop','board','help','perks'];
 function setOverlay(id){
   for(const o of OVERLAYS) $(o).hidden = (o!==id);
   $('hud').hidden = (id!==null && id!=='pause');
@@ -817,6 +883,15 @@ function setOverlay(id){
 function startGame(wave, score, hp){
   audio();
   music.start();
+  // вступительная заставка — только на свежем старте с первой волны
+  if((wave ?? 1) === 1 && score == null){
+    startStory(STORY.intro, ()=>{
+      state.mode = 'play';
+      setOverlay(null);
+      resetGame(1);
+    });
+    return;
+  }
   state.mode = 'play';
   setOverlay(null);
   resetGame(wave, score, hp);
@@ -843,16 +918,34 @@ function onBossKilled(){
   state.score += sc;
   addFloat(b.x, b.y, '+' + sc);
   $('bossbarwrap').hidden = true;
-  if(state.wave === TOTAL_WAVES){ endGame(true); return; } // победа в кампании; в выживании едем дальше
+  if(state.wave === TOTAL_WAVES){
+    // финальный мультик: победа с намёком на выживание, затем экран победы
+    startStory(STORY.final, ()=> endGame(true), { finale:true });
+    return;
+  }
   // награда: пересчитываем все перки на новый уровень и лечим
   applyProgress(state.wave + 1);
   player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp*0.5));
   addFloat(player.x, player.y - 44, '+10 HP · +2 УРОН · −3% ПЕРЕЗАРЯДКА', '#6fe58f');
   if(b.num === 3) addFloat(player.x, player.y - 70, 'НОВЫЙ ПЕРК: РЕГЕНЕРАЦИЯ!', '#f1c40f');
   else if(b.num > 3) addFloat(player.x, player.y - 70, 'РЕГЕН +0.25/с · БОНУСЫ ДОЛЬШЕ', '#f1c40f');
-  waveBanner = { text: 'БОСС УНИЧТОЖЕН!', t: 1.6 };
   sfx.win();
-  setTimeout(()=>{ if(state.mode==='play') startWave(state.wave+1); }, 1500);
+  const nextWave = state.wave + 1;
+  const chapter = STORY.bosses[b.num - 1];
+  if(chapter && b.num <= 9){
+    // глава сюжета после каждого босса кампании
+    const bd = b.def;
+    setTimeout(()=>{
+      if(state.mode !== 'play') return;
+      startStory(chapter, ()=>{
+        state.mode = 'play';
+        startWave(nextWave);
+      }, { bossDef: bd });
+    }, 900);
+  } else {
+    waveBanner = { text: 'БОСС УНИЧТОЖЕН!', t: 1.6 };
+    setTimeout(()=>{ if(state.mode==='play') startWave(nextWave); }, 1500);
+  }
 }
 
 function endGame(win){
@@ -864,7 +957,7 @@ function endGame(win){
   const earned = Math.max(0, Math.round((state.score - (state.awardedFor || 0)) / 10));
   state.awardedFor = state.score;
   profile.coins += earned; saveProfile();
-  const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave);
+  const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave, profile.tank);
   const info = '+' + earned + ' 🪙' + (place ? ' · Место в рейтинге: ' + place : '');
   $(win ? 'winPlace' : 'losePlace').textContent = info;
   if(win){
@@ -892,6 +985,7 @@ window.addEventListener('keydown', e=>{
     if(state.mode === 'play') pauseGame(); else if(state.mode === 'pause') resumeGame();
   }
   if(e.code === 'KeyQ') useSuper();
+  if(state.mode === 'story' && ['Space','Enter','Escape'].includes(e.code)) endStory();
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e=> keys[e.code] = false);
@@ -899,7 +993,11 @@ document.addEventListener('visibilitychange', ()=>{ if(document.hidden) pauseGam
 
 const mouse = { x: W/2, y: H/2, down:false, used:false };
 canvas.addEventListener('mousemove', e=>{ mouse.x = e.clientX; mouse.y = e.clientY; mouse.used = true; });
-canvas.addEventListener('mousedown', ()=>{ mouse.down = true; audio(); });
+canvas.addEventListener('mousedown', ()=>{
+  audio();
+  if(state.mode === 'story'){ endStory(); return; }
+  mouse.down = true;
+});
 window.addEventListener('mouseup', ()=> mouse.down = false);
 
 // touch: left zone = joystick, right zone / fire button = fire
@@ -910,6 +1008,7 @@ function superBtnPos(){ return { x: W - 74, y: H - 196, r: 34 }; }
 
 canvas.addEventListener('touchstart', e=>{
   e.preventDefault(); audio();
+  if(state.mode === 'story'){ endStory(); return; }
   for(const t of e.changedTouches){
     const sb = superBtnPos();
     if(state.mode === 'play' && dist(t.clientX, t.clientY, sb.x, sb.y) < sb.r + 10){
@@ -2124,6 +2223,82 @@ function render(){
     ctx.fillText('⚡', sb.x, sb.y + 1);
   }
 
+  // сюжетная заставка
+  if(state.mode === 'story'){
+    const t = story.t;
+    ctx.fillStyle = 'rgba(10,13,17,0.82)';
+    ctx.fillRect(0, 0, W, H);
+    const cy = H*0.4;
+    // линия земли
+    ctx.fillStyle = '#ffffff12';
+    ctx.fillRect(0, cy + 34, W, 3);
+    // наш танк выезжает слева
+    const sk = playerSkin();
+    const tx = Math.min(W*0.42, -70 + t*150);
+    drawTank({ x:tx, y:cy, hull:0, turret:0, blink:0 },
+             { hullColor:sk.hull, darkColor:sk.dark, scale:1.1, fx:sk.fx });
+    if(story.finale){
+      // салют
+      for(let i=0;i<6;i++){
+        const ft = (t*0.8 + i*0.37) % 1.5;
+        if(ft < 1){
+          const fx0 = 60 + (i*173.7) % Math.max(60, W-120), fy = 60 + (i*97) % (H*0.25);
+          ctx.globalAlpha = 1 - ft;
+          ctx.strokeStyle = ['#f1c40f','#ff6b6b','#6fd9e8','#6fe58f'][i%4];
+          ctx.lineWidth = 2;
+          for(let k=0;k<8;k++){
+            const a = k*Math.PI/4;
+            ctx.beginPath();
+            ctx.moveTo(fx0 + Math.cos(a)*ft*28, fy + Math.sin(a)*ft*28);
+            ctx.lineTo(fx0 + Math.cos(a)*ft*55, fy + Math.sin(a)*ft*55);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+      // ...и зловещие силуэты новых колонн на горизонте
+      if(t > 4.5){
+        const k = Math.min(1, (t-4.5)/2);
+        ctx.globalAlpha = 0.55*k;
+        for(let i=0;i<7;i++){
+          drawTank({ x: W - 36 - i*52 + (1-k)*140, y: 62, hull:Math.PI, turret:Math.PI, blink:0 },
+                   { hullColor:'#1c2127', darkColor:'#101419', scale:0.5 });
+        }
+        ctx.globalAlpha = 1;
+      }
+    } else if(story.bossDef){
+      // поверженный босс: серый, накренившийся, дымит
+      drawTank({ x:W*0.74, y:cy + 8, hull:-0.45, turret:-0.9, blink:1 },
+               { hullColor:'#5a646e', darkColor:'#2e353c', scale:1.6 });
+      for(let i=0;i<4;i++){
+        const st = (t*0.55 + i*0.33) % 1.4;
+        ctx.globalAlpha = Math.max(0, 0.5 - st*0.38);
+        ctx.fillStyle = '#4a525c';
+        ctx.beginPath();
+        ctx.arc(W*0.74 + 8 - st*16, cy - 18 - st*60, 6 + st*13, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    // текст построчно
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const baseY = H*0.58;
+    const f1 = Math.min(26, W/17), f2 = Math.min(18, W/24);
+    story.lines.forEach((ln, i)=>{
+      const la = Math.min(1, Math.max(0, (t - 0.4 - i*0.7)*2));
+      if(la <= 0) return;
+      ctx.globalAlpha = la;
+      ctx.fillStyle = i === 0 ? '#f1c40f' : '#e8eef2';
+      ctx.font = (i === 0 ? f1 : f2) + 'px "Russo One", sans-serif';
+      ctx.fillText(ln, W/2, baseY + (i === 0 ? 0 : 14) + i*(f2+14));
+    });
+    ctx.globalAlpha = 0.55 + 0.3*Math.sin(t*4);
+    ctx.fillStyle = '#93a1ad';
+    ctx.font = '13px "Russo One", sans-serif';
+    ctx.fillText(IS_TOUCH ? 'коснись экрана, чтобы продолжить' : 'ПРОБЕЛ или клик — продолжить', W/2, H - 36);
+    ctx.globalAlpha = 1;
+  }
+
   // wave banner
   const banner = $('wavetitle');
   if(waveBanner.t > 0){ banner.textContent = waveBanner.text; banner.style.opacity = Math.min(1, waveBanner.t); }
@@ -2138,6 +2313,7 @@ function loop(now){
   if(dt > 0.05) dt = 0.05;
   if(window.innerWidth !== W || window.innerHeight !== H) resize();
   if(state.mode === 'play') update(dt);
+  else if(state.mode === 'story'){ state.time += dt; story.t += dt; }
   render();
   requestAnimationFrame(loop);
 }
@@ -2242,11 +2418,13 @@ function renderShop(){
     grid.append(card);
   }
 
-  // ---- прокачка бонусов ----
-  const hdr2 = document.createElement('div');
-  hdr2.style.cssText = 'width:100%;font-size:14px;color:var(--ink-dim);letter-spacing:2px;margin-top:8px';
-  hdr2.textContent = '— ПРОКАЧКА БОНУСОВ —';
-  grid.append(hdr2);
+}
+
+// ---------- экран прокачки ----------
+function renderPerks(){
+  $('perkCoins').textContent = '🪙 ' + profile.coins;
+  const grid = $('perkGrid');
+  grid.innerHTML = '';
   for(const u of UPGRADES){
     const lvl = profile.upg[u.id];
     const card = document.createElement('div'); card.className = 'skincard';
@@ -2271,7 +2449,7 @@ function renderShop(){
         profile.coins -= cost;
         profile.upg[u.id]++;
         saveProfile(); audio(); sfx.pickup();
-        renderShop();
+        renderPerks();
       });
     }
     card.append(chip, nm, ds, btn);
@@ -2281,21 +2459,37 @@ function renderShop(){
 $('shopBtn').addEventListener('click', ()=>{ renderShop(); setOverlay('shop'); });
 $('shopBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
 
-// ---------- рейтинг ----------
+// ---------- рейтинг: вкладки по классам, 1 волна = 1 кубок ----------
+let boardTab = 'all';
 function renderBoard(){
+  const tabs = $('boardTabs');
+  tabs.innerHTML = '';
+  const TABS = [['all','ВСЕ'], ['uni','УНИВЕРСАЛ'], ['fast','ШУСТРЫЙ'], ['heavy','ТЯЖЁЛЫЙ']];
+  for(const [id, label] of TABS){
+    const b = document.createElement('button');
+    b.className = 'classbtn' + (boardTab === id ? ' sel' : '');
+    b.style.minWidth = '0';
+    b.style.flexDirection = 'row';
+    b.textContent = label;
+    b.addEventListener('click', ()=>{ boardTab = id; renderBoard(); });
+    tabs.append(b);
+  }
   const list = $('boardList');
   list.innerHTML = '';
-  if(!board.length){
+  const rows = boardTab === 'all' ? board : board.filter(r => r.tank === boardTab);
+  if(!rows.length){
     const row = document.createElement('div'); row.className = 'boardrow';
-    row.innerHTML = '<span class="nm">Пока пусто — сыграй первый бой!</span>';
+    row.innerHTML = '<span class="nm">Пока пусто — сыграй этим классом!</span>';
     list.append(row);
     return;
   }
-  board.forEach((r, i)=>{
+  const short = { uni:'У', fast:'Ш', heavy:'Т' };
+  rows.slice(0, 10).forEach((r, i)=>{
     const row = document.createElement('div'); row.className = 'boardrow';
     row.innerHTML = '<span class="pl">' + (i+1) + '</span><span class="nm"></span>' +
-                    '<span class="wv">волна ' + (r.wave|0) + '</span><span class="sc">' + (r.score|0) + '</span>';
-    row.querySelector('.nm').textContent = r.name; // textContent — имя не исполняется как HTML
+                    '<span class="wv"></span><span class="sc">🏆 ' + (r.wave|0) + '</span>';
+    row.querySelector('.nm').textContent = r.name + (boardTab === 'all' && r.tank ? ' · ' + (short[r.tank] || '') : '');
+    row.querySelector('.wv').textContent = (r.score|0) + ' очк.';
     list.append(row);
   });
 }
@@ -2303,6 +2497,8 @@ $('boardBtn').addEventListener('click', ()=>{ renderBoard(); setOverlay('board')
 $('boardBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
 $('helpBtn').addEventListener('click', ()=>{ setOverlay('help'); });
 $('helpBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
+$('perksBtn').addEventListener('click', ()=>{ renderPerks(); setOverlay('perks'); });
+$('perkBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
 
 // ---------- имя игрока ----------
 $('nameInput').addEventListener('input', e=>{

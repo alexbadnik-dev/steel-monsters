@@ -251,7 +251,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v18';
+const GAME_VERSION = 'v19';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -417,11 +417,40 @@ function loadBoard(){
   }catch(e){ return []; }
 }
 let board = loadBoard();
+// ---------- общий онлайн-рейтинг (Supabase) ----------
+// Чтобы включить: на supabase.com создайте проект, таблицу scores
+// (name text, score int8, wave int8, tank text, diff text, cups int8,
+//  created_at timestamptz default now()) с политиками RLS на anon insert/select,
+// и впишите сюда Project URL и anon-ключ. Вкладка «МИР» появится сама.
+const ONLINE = { url: '', key: '' };
+function onlineEnabled(){ return !!(ONLINE.url && ONLINE.key); }
+async function submitOnline(e){
+  if(!onlineEnabled()) return;
+  try{
+    await fetch(ONLINE.url + '/rest/v1/scores', {
+      method: 'POST',
+      headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key,
+                 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ name: e.name, score: e.score, wave: e.wave, tank: e.tank, diff: e.diff, cups: e.cups })
+    });
+  }catch(err){}
+}
+async function fetchOnline(){
+  if(!onlineEnabled()) return null;
+  try{
+    const r = await fetch(ONLINE.url + '/rest/v1/scores?select=name,score,wave,tank,diff,cups&order=cups.desc,score.desc&limit=10',
+      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } });
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(err){ return null; }
+}
+
 // кубки: 1 волна = 1 🏆 (на Харде ×2, на Кошмаре ×3); сортируем по кубкам
 function cupsOf(r){ return (r.cups|0) || (r.wave|0); } // старые записи — 1 кубок за волну
 function submitScore(name, score, wave, tank, diff){
   const mult = (DIFFS[diff] || DIFFS.norm).cups;
   const entry = { name, score, wave, tank: tank || 'uni', diff: diff || 'norm', cups: wave * mult, ts: Date.now() };
+  submitOnline(entry);
   board.push(entry);
   board.sort((a,b) => cupsOf(b) - cupsOf(a) || b.score - a.score);
   board = board.slice(0, 30);
@@ -606,6 +635,41 @@ const music = (() => {
            get on(){ return on; }, get track(){ return trackId; } };
 })();
 
+// ---------- озвучка: зловещий «голос машины» (встроенный синтез речи) ----------
+const voice = (() => {
+  const ok = 'speechSynthesis' in window;
+  let on = false;
+  try{ on = localStorage.getItem('sm_voice') === '1'; }catch(e){}
+  let ru = null;
+  function pick(){
+    try{
+      const vs = speechSynthesis.getVoices();
+      ru = vs.find(v => /^ru/i.test(v.lang)) || vs.find(v => /ru/i.test(v.lang)) || null;
+    }catch(e){}
+  }
+  if(ok){ pick(); try{ speechSynthesis.onvoiceschanged = pick; }catch(e){} }
+  function say(text, opts){
+    if(!on || !ok) return;
+    try{
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      if(ru) u.voice = ru;
+      u.lang = 'ru-RU';
+      u.rate = (opts && opts.rate) || 0.82;   // медленно...
+      u.pitch = (opts && opts.pitch) || 0.2;  // ...и низко
+      u.volume = 0.95;
+      speechSynthesis.speak(u);
+    }catch(e){}
+  }
+  function setOn(v){
+    on = !!v && ok;
+    try{ localStorage.setItem('sm_voice', on ? '1' : '0'); }catch(e){}
+    if(on) say('Боевая система активна');
+    else { try{ speechSynthesis.cancel(); }catch(e){} }
+  }
+  return { say, setOn, get on(){ return on; }, ok };
+})();
+
 // ---------- enemy types & waves ----------
 const ETYPES = {
   scout:   { r:16, hp:20, sp:150, dmg:6,  fire:[1.0,1.9], score:80,  color:'#9fd1e8', dark:'#45758e', scale:0.68, bspd:360, br:3.5 },
@@ -749,6 +813,7 @@ function startStory(lines, done, opts){
   story.finale = !!(opts && opts.finale);
   story.bossDef = (opts && opts.bossDef) || null;
   state.mode = 'story';
+  voice.say(lines[0], { rate: 0.8 }); // озвучиваем заголовок главы
   waveBanner.t = 0; // убрать игровой баннер под заставкой
   for(const o of OVERLAYS) $(o).hidden = true;
   $('hud').hidden = true;
@@ -827,6 +892,7 @@ function spawnBoss(){
   $('bosslabel').textContent = def.name + (final ? '' : num > BOSS_COUNT ? ' · №' + num : ' · ' + num + '/' + BOSS_COUNT);
   $('bossbarwrap').hidden = false;
   minionTimer = 6;
+  voice.say(final ? 'Финальный босс. ' + def.name : def.name);
 }
 
 function spawnDrone(x, y){
@@ -984,6 +1050,7 @@ function endGame(win){
   const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave, profile.tank, profile.diff);
   const info = '+' + earned + ' 🪙' + (place ? ' · Место в рейтинге: ' + place : '');
   $(win ? 'winPlace' : 'losePlace').textContent = info;
+  voice.say(win ? 'Победа. Империя пала.' : 'Танк уничтожен');
   if(win){
     sfx.win(); vibrate(200);
     $('winScore').textContent = 'Счёт: ' + state.score;
@@ -1197,6 +1264,7 @@ function addSuper(v){
   if(was < 1 && player.superCharge >= 1){
     addFloat(player.x, player.y - 40, 'СУПЕР ГОТОВ!', '#f1c40f');
     sfx.pickup(); vibrate(60);
+    voice.say('Супер готов', { rate: 0.95 });
   }
 }
 function useSuper(){
@@ -1543,6 +1611,7 @@ function update(dt){
       boss.enraged = true;
       waveBanner = { text: boss.def.name + ' В ЯРОСТИ!', t: 2.2 };
       $('bosslabel').textContent = boss.def.name + ' В ЯРОСТИ';
+      voice.say(boss.def.name + ' в ярости');
       sfx.enrage(); vibrate(150);
       state.shake = Math.min(state.shake + (REDUCED?0:8), 12);
     }
@@ -2247,79 +2316,180 @@ function render(){
     ctx.fillText('⚡', sb.x, sb.y + 1);
   }
 
-  // сюжетная заставка
+  // сюжетная заставка (кино: полосы, грозовое небо, луна, огонь)
   if(state.mode === 'story'){
     const t = story.t;
-    ctx.fillStyle = 'rgba(10,13,17,0.82)';
-    ctx.fillRect(0, 0, W, H);
-    const cy = H*0.4;
-    // линия земли
-    ctx.fillStyle = '#ffffff12';
-    ctx.fillRect(0, cy + 34, W, 3);
-    // наш танк выезжает слева
+    const bh = Math.min(64, H*0.1);          // киношные чёрные полосы
+    const groundY = H*0.44;
+    const isIntro = !story.finale && !story.bossDef;
+
+    // небо: тёмный градиент с багровым заревом у горизонта
+    const sky = ctx.createLinearGradient(0, bh, 0, groundY);
+    sky.addColorStop(0, '#0a0d12');
+    sky.addColorStop(0.72, story.finale ? '#231a2e' : '#1d1216');
+    sky.addColorStop(1, story.finale ? '#3a2a1a' : '#3a1a14');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, groundY);
+    // земля
+    ctx.fillStyle = '#121519';
+    ctx.fillRect(0, groundY, W, H - groundY);
+    ctx.fillStyle = '#ffffff14';
+    ctx.fillRect(0, groundY, W, 2);
+
+    // кроваво-красная луна с ореолом
+    const mx = W*0.82, my = bh + 52;
+    ctx.globalAlpha = 0.25; ctx.fillStyle = '#c0392b';
+    ctx.beginPath(); ctx.arc(mx, my, 46, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1; ctx.fillStyle = '#8a2f24';
+    ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#6e2018';
+    ctx.beginPath(); ctx.arc(mx - 9, my - 6, 6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + 8, my + 9, 4, 0, Math.PI*2); ctx.fill();
+
+    // зарницы: редкие вспышки на небе
+    const fl = Math.sin(t*1.7 + 2.1);
+    if(fl > 0.985){
+      ctx.fillStyle = 'rgba(255,240,220,0.1)';
+      ctx.fillRect(0, 0, W, groundY);
+    }
+
+    // вражеская колонна на горизонте: во вступлении ползёт, в финале — надвигается
+    if(isIntro || (story.finale && t > 4.5)){
+      const k = story.finale ? Math.min(1, (t-4.5)/2) : 1;
+      const shift = isIntro ? (t*26) % 90 : (1-k)*140;
+      ctx.globalAlpha = (story.finale ? 0.6*k : 0.5);
+      for(let i=0;i<8;i++){
+        drawTank({ x: W + 30 - i*78 - shift, y: groundY - 14, hull:Math.PI, turret:Math.PI, blink:0 },
+                 { hullColor:'#191d23', darkColor:'#0e1115', scale:0.55 });
+        // красные глаза-огоньки
+        ctx.fillStyle = '#ff3b2f';
+        ctx.globalAlpha = (story.finale ? k : 0.8) * (0.55 + 0.45*Math.sin(t*5 + i));
+        ctx.beginPath(); ctx.arc(W + 30 - i*78 - shift - 8, groundY - 18, 2.2, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = (story.finale ? 0.6*k : 0.5);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // наш танк выезжает слева и встаёт
     const sk = playerSkin();
-    const tx = Math.min(W*0.42, -70 + t*150);
-    drawTank({ x:tx, y:cy, hull:0, turret:0, blink:0 },
-             { hullColor:sk.hull, darkColor:sk.dark, scale:1.1, fx:sk.fx });
+    const heroX = Math.min(W*0.38, -70 + t*170);
+    const heroY = groundY + Math.min(90, H*0.14);
+    drawTank({ x:heroX, y:heroY, hull:0, turret: story.bossDef ? -0.12 : 0, blink:0 },
+             { hullColor:sk.hull, darkColor:sk.dark, scale:1.15, fx:sk.fx });
+
     if(story.finale){
-      // салют
-      for(let i=0;i<6;i++){
-        const ft = (t*0.8 + i*0.37) % 1.5;
+      // салют на полнеба
+      for(let i=0;i<9;i++){
+        const ft = (t*0.85 + i*0.31) % 1.5;
         if(ft < 1){
-          const fx0 = 60 + (i*173.7) % Math.max(60, W-120), fy = 60 + (i*97) % (H*0.25);
+          const fx0 = 50 + (i*167.7) % Math.max(60, W-100);
+          const fy = bh + 20 + (i*83) % Math.max(40, groundY - bh - 70);
           ctx.globalAlpha = 1 - ft;
-          ctx.strokeStyle = ['#f1c40f','#ff6b6b','#6fd9e8','#6fe58f'][i%4];
-          ctx.lineWidth = 2;
-          for(let k=0;k<8;k++){
-            const a = k*Math.PI/4;
+          ctx.strokeStyle = ['#f1c40f','#ff6b6b','#6fd9e8','#6fe58f','#f78fb3'][i%5];
+          ctx.lineWidth = 2.5;
+          for(let k2=0;k2<10;k2++){
+            const a = k2*Math.PI/5 + i;
             ctx.beginPath();
-            ctx.moveTo(fx0 + Math.cos(a)*ft*28, fy + Math.sin(a)*ft*28);
-            ctx.lineTo(fx0 + Math.cos(a)*ft*55, fy + Math.sin(a)*ft*55);
+            ctx.moveTo(fx0 + Math.cos(a)*ft*30, fy + Math.sin(a)*ft*30);
+            ctx.lineTo(fx0 + Math.cos(a)*ft*62, fy + Math.sin(a)*ft*62);
             ctx.stroke();
           }
           ctx.globalAlpha = 1;
         }
       }
-      // ...и зловещие силуэты новых колонн на горизонте
-      if(t > 4.5){
-        const k = Math.min(1, (t-4.5)/2);
-        ctx.globalAlpha = 0.55*k;
-        for(let i=0;i<7;i++){
-          drawTank({ x: W - 36 - i*52 + (1-k)*140, y: 62, hull:Math.PI, turret:Math.PI, blink:0 },
-                   { hullColor:'#1c2127', darkColor:'#101419', scale:0.5 });
-        }
-        ctx.globalAlpha = 1;
-      }
-    } else if(story.bossDef){
-      // поверженный босс: серый, накренившийся, дымит
-      drawTank({ x:W*0.74, y:cy + 8, hull:-0.45, turret:-0.9, blink:1 },
-               { hullColor:'#5a646e', darkColor:'#2e353c', scale:1.6 });
-      for(let i=0;i<4;i++){
-        const st = (t*0.55 + i*0.33) % 1.4;
-        ctx.globalAlpha = Math.max(0, 0.5 - st*0.38);
-        ctx.fillStyle = '#4a525c';
+      // золотые искры опускаются
+      ctx.fillStyle = '#ffe08a';
+      for(let i=0;i<14;i++){
+        const et = (t*0.35 + i*0.21) % 1;
+        ctx.globalAlpha = 0.7*(1 - et);
         ctx.beginPath();
-        ctx.arc(W*0.74 + 8 - st*16, cy - 18 - st*60, 6 + st*13, 0, Math.PI*2);
+        ctx.arc((i*131.3) % W, bh + et*(groundY - bh), 1.8, 0, Math.PI*2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
+    } else if(story.bossDef){
+      // поверженный босс: накренившийся, горит и искрит
+      const bx = W*0.72, by = heroY + 4;
+      drawTank({ x:bx, y:by, hull:-0.45, turret:-0.95, blink:1 },
+               { hullColor:'#4e5861', darkColor:'#272d34', scale:1.65 });
+      // пламя
+      for(let i=0;i<6;i++){
+        const ft = (t*1.6 + i*0.23) % 0.9;
+        ctx.globalAlpha = Math.max(0, 0.85 - ft);
+        ctx.fillStyle = i % 2 ? '#ff9f43' : '#ffd84d';
+        ctx.beginPath();
+        ctx.arc(bx - 14 + (i%3)*14 + Math.sin(t*7+i)*3, by - 26 - ft*46, 7 - ft*5, 0, Math.PI*2);
+        ctx.fill();
+      }
+      // дым над пламенем
+      for(let i=0;i<4;i++){
+        const st = (t*0.5 + i*0.33) % 1.5;
+        ctx.globalAlpha = Math.max(0, 0.45 - st*0.3);
+        ctx.fillStyle = '#3c444d';
+        ctx.beginPath();
+        ctx.arc(bx + 4 - st*20, by - 60 - st*70, 8 + st*16, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // внутри что-то взрывается: вспышки по корпусу
+      const bang = (t*0.9) % 1.7;
+      if(bang < 0.12){
+        ctx.globalAlpha = 1 - bang/0.12;
+        ctx.fillStyle = '#fff2cc';
+        ctx.beginPath();
+        ctx.arc(bx + Math.sin(t*13)*26, by - 8 + Math.cos(t*11)*14, 10, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      // герой контрольно постреливает в сторону босса
+      const shot = (t + 0.4) % 1.9;
+      if(shot < 0.1 && heroX > W*0.3){
+        ctx.strokeStyle = '#f1c40f';
+        ctx.globalAlpha = 1 - shot/0.1;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(heroX + 44, heroY - 6);
+        ctx.lineTo(bx - 50, by - 14);
+        ctx.stroke();
+        ctx.fillStyle = '#ffe08a';
+        ctx.beginPath(); ctx.arc(heroX + 46, heroY - 6, 7, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
     }
-    // текст построчно
+
+    // киношные полосы
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, bh);
+    ctx.fillRect(0, H - bh, W, bh);
+
+    // текст: заголовок «впрыгивает», строки проявляются
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const baseY = H*0.58;
-    const f1 = Math.min(26, W/17), f2 = Math.min(18, W/24);
+    const baseY = groundY + Math.min(150, H*0.24);
+    const f1 = Math.min(27, W/16), f2 = Math.min(17, W/25);
     story.lines.forEach((ln, i)=>{
       const la = Math.min(1, Math.max(0, (t - 0.4 - i*0.7)*2));
       if(la <= 0) return;
       ctx.globalAlpha = la;
-      ctx.fillStyle = i === 0 ? '#f1c40f' : '#e8eef2';
-      ctx.font = (i === 0 ? f1 : f2) + 'px "Russo One", sans-serif';
-      ctx.fillText(ln, W/2, baseY + (i === 0 ? 0 : 14) + i*(f2+14));
+      if(i === 0){
+        const sc = 1.6 - 0.6*la; // заголовок прилетает с масштабом
+        ctx.save();
+        ctx.translate(W/2, baseY);
+        ctx.scale(sc, sc);
+        ctx.fillStyle = '#f1c40f';
+        ctx.shadowColor = '#000'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
+        ctx.font = f1 + 'px "Russo One", sans-serif';
+        ctx.fillText(ln, 0, 0);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#e8eef2';
+        ctx.font = f2 + 'px "Russo One", sans-serif';
+        ctx.fillText(ln, W/2, baseY + 16 + i*(f2+13));
+      }
     });
     ctx.globalAlpha = 0.55 + 0.3*Math.sin(t*4);
     ctx.fillStyle = '#93a1ad';
-    ctx.font = '13px "Russo One", sans-serif';
-    ctx.fillText(IS_TOUCH ? 'коснись экрана, чтобы продолжить' : 'ПРОБЕЛ или клик — продолжить', W/2, H - 36);
+    ctx.font = '12px "Russo One", sans-serif';
+    ctx.fillText(IS_TOUCH ? 'коснись экрана, чтобы продолжить' : 'ПРОБЕЛ или клик — продолжить', W/2, H - bh/2);
     ctx.globalAlpha = 1;
   }
 
@@ -2489,6 +2659,7 @@ function renderBoard(){
   const tabs = $('boardTabs');
   tabs.innerHTML = '';
   const TABS = [['all','ВСЕ'], ['uni','УНИВЕРСАЛ'], ['fast','ШУСТРЫЙ'], ['heavy','ТЯЖЁЛЫЙ']];
+  if(onlineEnabled()) TABS.push(['world','🌍 МИР']);
   for(const [id, label] of TABS){
     const b = document.createElement('button');
     b.className = 'classbtn' + (boardTab === id ? ' sel' : '');
@@ -2500,6 +2671,23 @@ function renderBoard(){
   }
   const list = $('boardList');
   list.innerHTML = '';
+  if(boardTab === 'world'){
+    const row = document.createElement('div'); row.className = 'boardrow';
+    row.innerHTML = '<span class="nm">Загрузка мирового рейтинга...</span>';
+    list.append(row);
+    fetchOnline().then(data => {
+      if(boardTab !== 'world') return;
+      list.innerHTML = '';
+      if(!data || !data.length){
+        const r2 = document.createElement('div'); r2.className = 'boardrow';
+        r2.innerHTML = '<span class="nm">Рейтинг недоступен или пуст</span>';
+        list.append(r2);
+        return;
+      }
+      renderBoardRows(list, data, true);
+    });
+    return;
+  }
   const rows = boardTab === 'all' ? board : board.filter(r => r.tank === boardTab);
   if(!rows.length){
     const row = document.createElement('div'); row.className = 'boardrow';
@@ -2507,14 +2695,18 @@ function renderBoard(){
     list.append(row);
     return;
   }
+  renderBoardRows(list, rows, boardTab === 'all');
+}
+function renderBoardRows(list, rows, showTank){
   const short = { uni:'У', fast:'Ш', heavy:'Т' };
   const dShort = { hard:'·ХАРД', night:'·КОШМАР' };
   rows.slice(0, 10).forEach((r, i)=>{
     const row = document.createElement('div'); row.className = 'boardrow';
     row.innerHTML = '<span class="pl">' + (i+1) + '</span><span class="nm"></span>' +
                     '<span class="wv"></span><span class="sc">🏆 ' + cupsOf(r) + '</span>';
-    row.querySelector('.nm').textContent = r.name
-      + (boardTab === 'all' && r.tank ? ' · ' + (short[r.tank] || '') : '')
+    // textContent — внешние имена из онлайна не исполняются как HTML
+    row.querySelector('.nm').textContent = String(r.name || 'Аноним').slice(0, 20)
+      + (showTank && r.tank ? ' · ' + (short[r.tank] || '') : '')
       + (dShort[r.diff] || '');
     row.querySelector('.wv').textContent = 'в.' + (r.wave|0) + ' · ' + (r.score|0);
     list.append(row);
@@ -2569,6 +2761,7 @@ function renderMusicRow(){
     const b = document.createElement('button');
     const active = id === null ? !music.on : (music.on && music.track === id);
     b.className = 'classbtn' + (active ? ' sel' : '');
+    b.style.flexDirection = 'row';
     b.textContent = label;
     b.addEventListener('click', ()=>{
       audio();
@@ -2578,6 +2771,18 @@ function renderMusicRow(){
       renderMusicRow();
     });
     row.append(b);
+  }
+  // озвучка зловещим голосом (если браузер умеет синтез речи)
+  if(voice.ok){
+    const vb = document.createElement('button');
+    vb.className = 'classbtn' + (voice.on ? ' sel' : '');
+    vb.style.flexDirection = 'row';
+    vb.textContent = '🎙 ГОЛОС';
+    vb.addEventListener('click', ()=>{
+      voice.setOn(!voice.on);
+      renderMusicRow();
+    });
+    row.append(vb);
   }
 }
 

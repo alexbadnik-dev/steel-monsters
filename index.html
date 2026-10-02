@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v29';
+const GAME_VERSION = 'v30';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -575,17 +575,23 @@ const sfx = {
     } else if(type === 'heavy'){  // глухой удар тяжёлого
       beep(110, .16, 'sine', .08, -60);
       noiseBurst(.12, .06, 'lowpass', 1000, -800);
-    } else if(type === 'scout'){  // лёгкое «пиу»
-      beep(540, .06, 'square', .035, -280);
+    } else if(type === 'scout'){  // лёгкая автопушка разведчика
+      beep(400, .07, 'square', .045, -200);
+      noiseBurst(.035, .035, 'highpass', 2800, 700);
     } else if(type === 'mortar'){ // «туумп» миномёта
       beep(85, .2, 'sine', .1, 95);
       noiseBurst(.08, .04, 'lowpass', 500, 300);
     } else if(type === 'boss'){   // залп босса
       beep(150, .2, 'sawtooth', .07, -85);
       noiseBurst(.15, .08, 'lowpass', 800, -600);
-    } else {                      // солдат
-      beep(240, .1, 'sawtooth', .035, -90);
+    } else {                      // солдат: средняя пушка
+      beep(190, .11, 'sine', .06, -85);
+      noiseBurst(.08, .045, 'lowpass', 1600, -1100);
     }
+  },
+  petShot(){ // пулемёт Напарника: короткая сухая очередь
+    noiseBurst(.04, .05, 'highpass', 3000, -900);
+    beep(230, .05, 'square', .03, -130);
   },
   dash(){ noiseBurst(.22, .06, 'lowpass', 380, 1100); }, // рывок босса
   // супер: многослойный взрыв главного калибра
@@ -1591,7 +1597,7 @@ function update(dt){
           bullets.push({ x:pet.x + Math.cos(pet.a)*12, y:pet.y + Math.sin(pet.a)*12,
                          vx:Math.cos(pet.a)*500, vy:Math.sin(pet.a)*500, from:'p',
                          dmg: Math.max(5, Math.round(player.dmg*0.4)), r:3 });
-          if(soundOn) beep(760, .05, 'square', .025, -260);
+          sfx.petShot();
           pet.cd = 0.9;
         }
       }
@@ -2291,46 +2297,79 @@ function drawPet(c, x, y, type, aim, t){
 }
 
 function drawPickup(m){
-  const pulse = 1 + Math.sin(m.t*6)*0.08;
+  const pulse = 1 + Math.sin(m.t*6)*0.07;
   const fade = m.t > 9 ? (Math.sin(m.t*14) > 0 ? 1 : 0.3) : 1;
+  const bob = Math.sin(m.t*2.6)*2.5; // парит над землёй
+  const SPEC = {
+    med:    { base:'#f3f6f8', dark:'#c4ccd4', edge:'#7d8a94' },
+    shield: { base:'#6fd9e8', dark:'#4aa6b8', edge:'#2d7686' },
+    rapid:  { base:'#f1c40f', dark:'#c29a08', edge:'#8a6d05' },
+    triple: { base:'#ff9f43', dark:'#d97f2a', edge:'#9c5a14' },
+    freeze: { base:'#bfe8f5', dark:'#8fc3d6', edge:'#5a92a8' },
+    magnet: { base:'#f3f6f8', dark:'#c4ccd4', edge:'#7d8a94' }
+  };
+  const S = SPEC[m.type] || SPEC.med;
   ctx.save();
   ctx.globalAlpha = fade;
-  ctx.translate(m.x, m.y); ctx.scale(pulse, pulse);
-  if(m.type === 'med'){
-    ctx.fillStyle = '#f3f6f8'; rrect(-13, -13, 26, 26, 6); ctx.fill();
-    ctx.fillStyle = '#e84c3d';
-    ctx.fillRect(-8, -3, 16, 6); ctx.fillRect(-3, -8, 6, 16);
-  } else if(m.type === 'shield'){
-    ctx.fillStyle = '#6fd9e8'; rrect(-13, -13, 26, 26, 8); ctx.fill();
-    ctx.strokeStyle = '#0e3a44'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI*2); ctx.stroke();
-  } else if(m.type === 'rapid'){
-    ctx.fillStyle = '#f1c40f'; rrect(-13, -13, 26, 26, 6); ctx.fill();
-    ctx.fillStyle = '#5c4a02';
-    ctx.beginPath();
-    ctx.moveTo(2,-9); ctx.lineTo(-6,2); ctx.lineTo(-1,2); ctx.lineTo(-3,9); ctx.lineTo(6,-2); ctx.lineTo(1,-2);
-    ctx.closePath(); ctx.fill();
-  } else if(m.type === 'freeze'){
-    ctx.fillStyle = '#bfe8f5'; rrect(-13, -13, 26, 26, 6); ctx.fill();
-    ctx.strokeStyle = '#1d6a8a'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-    for(let i=0;i<3;i++){
-      const a = i*Math.PI/3;
+  // тень на земле остаётся на месте — ящик парит над ней
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(m.x + 3, m.y + 17, 13 - bob*0.8, 5 - bob*0.3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.translate(m.x, m.y - 2 + bob);
+  ctx.scale(pulse, pulse);
+  // корпус с толщиной: нижняя грань, боковая, лицевая
+  ctx.fillStyle = S.edge;
+  rrect(-14, -10, 28, 26, 7); ctx.fill();
+  ctx.fillStyle = S.dark;
+  rrect(-14, -12.5, 28, 26, 7); ctx.fill();
+  ctx.fillStyle = S.base;
+  rrect(-14, -15, 28, 25, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.6;
+  rrect(-14, -15, 28, 31, 7); ctx.stroke();
+  // глянцевый блик сверху
+  ctx.fillStyle = '#ffffff40';
+  rrect(-14, -15, 28, 10, 7); ctx.fill();
+  // иконка: сначала тёмная «тень» со сдвигом, затем сама — объём
+  const icon = (dx, dy, color) => {
+    ctx.save();
+    ctx.translate(dx, dy - 2.5);
+    ctx.fillStyle = color; ctx.strokeStyle = color;
+    if(m.type === 'med'){
+      ctx.fillRect(-8, -3, 16, 6); ctx.fillRect(-3, -8, 6, 16);
+    } else if(m.type === 'shield'){
+      ctx.lineWidth = 3.4;
+      ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI*2); ctx.stroke();
+    } else if(m.type === 'rapid'){
       ctx.beginPath();
-      ctx.moveTo(-Math.cos(a)*8, -Math.sin(a)*8);
-      ctx.lineTo(Math.cos(a)*8, Math.sin(a)*8);
-      ctx.stroke();
+      ctx.moveTo(2,-9); ctx.lineTo(-6,2); ctx.lineTo(-1,2); ctx.lineTo(-3,9); ctx.lineTo(6,-2); ctx.lineTo(1,-2);
+      ctx.closePath(); ctx.fill();
+    } else if(m.type === 'triple'){
+      for(const dy2 of [-6, 0, 6]){ ctx.beginPath(); ctx.arc(0, dy2, 2.8, 0, Math.PI*2); ctx.fill(); }
+    } else if(m.type === 'freeze'){
+      ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      for(let i=0;i<3;i++){
+        const a = i*Math.PI/3;
+        ctx.beginPath();
+        ctx.moveTo(-Math.cos(a)*8, -Math.sin(a)*8);
+        ctx.lineTo(Math.cos(a)*8, Math.sin(a)*8);
+        ctx.stroke();
+      }
+    } else if(m.type === 'magnet'){
+      ctx.lineWidth = 5.4; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.arc(0, -1, 6, 0, Math.PI); ctx.stroke();
+      ctx.fillRect(-8.5, -8, 5, 5); ctx.fillRect(3.5, -8, 5, 5);
     }
-  } else if(m.type === 'magnet'){
-    ctx.fillStyle = '#f3f6f8'; rrect(-13, -13, 26, 26, 6); ctx.fill();
-    ctx.strokeStyle = '#e84c3d'; ctx.lineWidth = 5; ctx.lineCap = 'butt';
-    ctx.beginPath(); ctx.arc(0, -1, 6, 0, Math.PI); ctx.stroke();
-    ctx.fillStyle = '#9db0bf';
-    ctx.fillRect(-8.5, -8, 5, 5); ctx.fillRect(3.5, -8, 5, 5);
-  } else {
-    ctx.fillStyle = '#ff9f43'; rrect(-13, -13, 26, 26, 6); ctx.fill();
-    ctx.fillStyle = '#5e3208';
-    for(const dy of [-6, 0, 6]){ ctx.beginPath(); ctx.arc(0, dy, 2.6, 0, Math.PI*2); ctx.fill(); }
-  }
+    ctx.restore();
+  };
+  const ICON_COLORS = {
+    med:    ['#9c2015', '#e84c3d'],
+    shield: ['#0a2b33', '#0e3a44'],
+    rapid:  ['#3a2e01', '#5c4a02'],
+    triple: ['#3d2005', '#5e3208'],
+    freeze: ['#0f465e', '#1d6a8a'],
+    magnet: ['#9c2015', '#e84c3d']
+  }[m.type] || ['#333', '#555'];
+  icon(1, 1.5, ICON_COLORS[0]); // тень иконки
+  icon(0, 0, ICON_COLORS[1]);   // сама иконка
   ctx.restore();
 }
 

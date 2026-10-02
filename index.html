@@ -34,6 +34,10 @@ html{height:100%}
 .hpwrap{width:180px;height:16px;background:#0008;border:2px solid #0006;border-radius:9px;overflow:hidden}
 #hpbar{height:100%;width:100%;background:linear-gradient(180deg,#6fe58f,#36b25a);transition:width .15s}
 #hpbar.low{background:linear-gradient(180deg,#ff7b6b,#d9382a)}
+.superwrap{height:8px;width:140px}
+#superbar{height:100%;width:0;background:linear-gradient(180deg,#ffe08a,#f1c40f);transition:width .15s}
+#superbar.ready{animation:superpulse .6s infinite alternate}
+@keyframes superpulse{from{filter:brightness(1)}to{filter:brightness(1.6)}}
 .stat{font-size:14px;text-shadow:0 2px 3px #000a;letter-spacing:.5px}
 #fxtext{font-size:12px;color:var(--gold);min-height:15px}
 .topbtns{position:fixed;right:10px;top:calc(env(safe-area-inset-top,0px) + 8px);z-index:7;display:flex;gap:8px}
@@ -115,6 +119,7 @@ html{height:100%}
 
 <div class="hud" id="hud" hidden>
   <div class="hpwrap"><div id="hpbar"></div></div>
+  <div class="hpwrap superwrap"><div id="superbar"></div></div>
   <div class="stat" id="scoretext">Счёт: 0</div>
   <div class="stat" id="wavetext">Волна 1</div>
   <div id="fxtext"></div>
@@ -185,7 +190,8 @@ html{height:100%}
   </div>
   <p>Боссы — каждая 10-я волна, у каждого свой характер. За босса танк получает перки: здоровье, урон, перезарядку, а с третьего — регенерацию.</p>
   <p>Берегись: снайпер целится красным лазером, камикадзе взрывается при контакте, миномётчик и дроны бомбят по красным кругам — выезжай из них! Медик с крестом лечит своих — выбивай его первым.</p>
-  <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины и классы танков.</p>
+  <p>⚡ Супер-способность «Ударная волна» заряжается убийствами (жёлтая полоска под здоровьем): сметает все вражеские снаряды и бомбы и бьёт всех вокруг. Активация — <b>Q</b> на компьютере или жёлтая кнопка над огнём на телефоне.</p>
+  <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины, классы танков и питомцев: Напарник стреляет по врагам, Ремонтник чинит твой танк.</p>
   <button class="btn gray" id="helpBack">НАЗАД</button>
 </div>
 
@@ -226,7 +232,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v13';
+const GAME_VERSION = 'v14';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -298,6 +304,13 @@ const SKINS = [
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
 
+// ---------- питомцы ----------
+const PETS = [
+  { id:'bot',  name:'Напарник',  cost:2500, color:'#8fb6d9', dark:'#3a5a74', desc:'Летает рядом и стреляет по врагам' },
+  { id:'heal', name:'Ремонтник', cost:4000, color:'#8fe0b0', dark:'#2e7d4f', desc:'Понемногу чинит твой танк (2 HP/с)' }
+];
+function petById(id){ return PETS.find(p => p.id === id) || null; }
+
 // ---------- классы танка ----------
 const CLASSES = {
   uni:   { name:'УНИВЕРСАЛ', cost:0,    speed:215, cd:0.24, rapidCd:0.11, dmg:15, hp:100, br:4,   scale:0.5,  desc:'Сбалансированный боец' },
@@ -329,9 +342,11 @@ function loadProfile(){
       equipped: typeof p.equipped === 'string' ? p.equipped : 'green',
       tank: ['fast','uni','heavy'].includes(p.tank) ? p.tank : 'uni',
       classes: Array.isArray(p.classes) ? p.classes.filter(c => typeof c === 'string') : ['uni'],
+      pets: Array.isArray(p.pets) ? p.pets.filter(c => typeof c === 'string') : [],
+      pet: ['bot','heal'].includes(p.pet) ? p.pet : null,
       customColor: /^#[0-9a-f]{6}$/i.test(p.customColor || '') ? p.customColor : null
     };
-  }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', classes:['uni'], customColor:null }; }
+  }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', classes:['uni'], pets:[], pet:null, customColor:null }; }
 }
 const profile = loadProfile();
 if(!profile.skins.includes('green')) profile.skins.push('green');
@@ -339,6 +354,7 @@ if(!profile.skins.includes(profile.equipped)) profile.equipped = 'green';
 if(!profile.classes.includes('uni')) profile.classes.push('uni');
 // кто уже играл этим классом до введения цен — оставляем бесплатно
 if(!profile.classes.includes(profile.tank)) profile.classes.push(profile.tank);
+if(profile.pet && !profile.pets.includes(profile.pet)) profile.pet = null;
 function saveProfile(){ try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){} }
 
 // ---------- рейтинг (топ-10 на этом устройстве) ----------
@@ -630,8 +646,9 @@ function waveDroneCount(n){
 const state = { mode:'menu', score:0, wave:1, shake:0, time:0 };
 const player = {
   x:0, y:0, r:22, hp:100, maxHp:100, dmg:15, speed:215, hull:0, turret:0, cd:0,
-  blink:0, nextBlink:2, shieldT:0, rapidT:0, tripleT:0, trackT:0
+  blink:0, nextBlink:2, shieldT:0, rapidT:0, tripleT:0, trackT:0, superCharge:0
 };
+const pet = { x:0, y:0, a:0, cd:0, t:0 };
 let bullets = [], enemies = [], pickups = [], particles = [], tracks = [], floats = [];
 let drones = [], bombs = [];
 let boss = null;
@@ -755,7 +772,8 @@ function resetGame(wave, score, hp){
   player.x = W*0.5; player.y = H*0.65;
   player.hp = Math.min(player.maxHp, hp ?? player.maxHp);
   player.hull = -Math.PI/2; player.turret = -Math.PI/2; player.cd = 0;
-  player.shieldT = 0; player.rapidT = 0; player.tripleT = 0;
+  player.shieldT = 0; player.rapidT = 0; player.tripleT = 0; player.superCharge = 0;
+  pet.x = player.x - 50; pet.y = player.y; pet.cd = 0; pet.t = 0;
   state.score = score ?? 0; state.shake = 0;
   $('bossbarwrap').hidden = true;
   startWave(wave ?? 1);
@@ -843,6 +861,7 @@ window.addEventListener('keydown', e=>{
   if(e.code === 'Escape'){
     if(state.mode === 'play') pauseGame(); else if(state.mode === 'pause') resumeGame();
   }
+  if(e.code === 'KeyQ') useSuper();
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e=> keys[e.code] = false);
@@ -857,10 +876,16 @@ window.addEventListener('mouseup', ()=> mouse.down = false);
 const joy = { id:null, bx:0, by:0, dx:0, dy:0 };
 const fireTouch = { id:null };
 function fireBtnPos(){ return { x: W - 74, y: H - 96, r: 46 }; }
+function superBtnPos(){ return { x: W - 74, y: H - 196, r: 34 }; }
 
 canvas.addEventListener('touchstart', e=>{
   e.preventDefault(); audio();
   for(const t of e.changedTouches){
+    const sb = superBtnPos();
+    if(state.mode === 'play' && dist(t.clientX, t.clientY, sb.x, sb.y) < sb.r + 10){
+      useSuper();
+      continue; // тап по суперу не считается огнём
+    }
     const fb = fireBtnPos();
     if(dist(t.clientX, t.clientY, fb.x, fb.y) < fb.r + 18 || (t.clientX > W*0.62 && joy.id !== null)){
       if(fireTouch.id === null) fireTouch.id = t.identifier;
@@ -986,6 +1011,76 @@ function bossShoot(b){
   sfx.eshot();
 }
 
+// общие пути смерти врага/дрона: очки, дроп, заряд супера, проверка волны
+function destroyEnemy(j){
+  const e = enemies[j];
+  const T = ETYPES[e.type];
+  explode(e.x, e.y, T.color, 18); sfx.boom(); vibrate(40);
+  state.score += e.score;
+  addFloat(e.x, e.y, '+' + e.score);
+  dropPickup(e.x, e.y);
+  enemies.splice(j,1);
+  addSuper(0.12);
+  checkWaveClear();
+}
+function destroyDrone(j){
+  const dr = drones[j];
+  explode(dr.x, dr.y, '#ff9f43', 16); sfx.boom(); vibrate(40);
+  state.score += dr.score;
+  addFloat(dr.x, dr.y, '+' + dr.score);
+  drones.splice(j,1);
+  addSuper(0.15);
+  checkWaveClear();
+}
+
+// ---------- супер-способность: ударная волна ----------
+function addSuper(v){
+  if(state.mode !== 'play') return;
+  const was = player.superCharge;
+  player.superCharge = Math.min(1, player.superCharge + v);
+  if(was < 1 && player.superCharge >= 1){
+    addFloat(player.x, player.y - 40, 'СУПЕР ГОТОВ!', '#f1c40f');
+    sfx.pickup(); vibrate(60);
+  }
+}
+function useSuper(){
+  if(state.mode !== 'play' || player.superCharge < 1) return;
+  player.superCharge = 0;
+  const R = 360;
+  sfx.boom(); sfx.shieldPop(); vibrate(220);
+  state.shake = Math.min(state.shake + (REDUCED?0:10), 14);
+  if(!REDUCED){
+    for(let i=0;i<3;i++)
+      particles.push({ x:player.x, y:player.y, vx:0, vy:0, ring:true, r:20+i*14, grow:420+i*130, life:0.5, t:0, color:'#ffe08a' });
+  }
+  explode(player.x, player.y, '#ffe08a', 24);
+  // волна сметает вражеские снаряды и обезвреживает бомбы
+  bullets = bullets.filter(b => b.from === 'p');
+  bombs = [];
+  // урон и отброс всем вокруг
+  for(let j = enemies.length-1; j >= 0; j--){
+    const e = enemies[j];
+    const d = dist(player.x,player.y,e.x,e.y);
+    if(d > R) continue;
+    const a = angTo(player.x,player.y,e.x,e.y);
+    e.x = Math.max(e.r, Math.min(W-e.r, e.x + Math.cos(a)*110));
+    e.y = Math.max(e.r, Math.min(H-e.r, e.y + Math.sin(a)*110));
+    e.hp -= 60 + player.dmg;
+    if(e.hp <= 0) destroyEnemy(j);
+    else explode(e.x, e.y, '#ffe08a', 5);
+  }
+  for(let j = drones.length-1; j >= 0; j--){
+    if(dist(player.x,player.y,drones[j].x,drones[j].y) > R + 60) continue;
+    drones[j].hp -= 45;
+    if(drones[j].hp <= 0) destroyDrone(j);
+  }
+  if(boss && dist(player.x,player.y,boss.x,boss.y) < R + boss.r){
+    boss.hp -= 90;
+    explode(boss.x, boss.y, '#ffe08a', 10);
+    if(boss.hp <= 0){ onBossKilled(); return; }
+  }
+}
+
 function damagePlayer(d){
   if(player.shieldT > 0){
     sfx.shieldPop();
@@ -1083,6 +1178,40 @@ function update(dt){
 
   // перк: регенерация (с 3-го босса)
   if(player.regen) player.hp = Math.min(player.maxHp, player.hp + player.regen*dt);
+
+  // питомец
+  if(profile.pet){
+    pet.t += dt;
+    const oa = pet.t*1.3;
+    const tx = player.x + Math.cos(oa)*56, ty = player.y + Math.sin(oa)*56;
+    pet.x += (tx - pet.x) * Math.min(1, dt*6);
+    pet.y += (ty - pet.y) * Math.min(1, dt*6);
+    pet.cd -= dt;
+    if(profile.pet === 'bot'){
+      let tgt = null, bd3 = 470;
+      for(const e of enemies){ const d = dist(pet.x,pet.y,e.x,e.y); if(d < bd3){ bd3 = d; tgt = e; } }
+      for(const dr of drones){ const d = dist(pet.x,pet.y,dr.x,dr.y); if(d < bd3){ bd3 = d; tgt = dr; } }
+      if(boss && !boss.entering){ const d = dist(pet.x,pet.y,boss.x,boss.y); if(d < bd3){ bd3 = d; tgt = boss; } }
+      if(tgt){
+        pet.a = lerpAng(pet.a, angTo(pet.x,pet.y,tgt.x,tgt.y), Math.min(1, dt*10));
+        if(pet.cd <= 0){
+          bullets.push({ x:pet.x + Math.cos(pet.a)*12, y:pet.y + Math.sin(pet.a)*12,
+                         vx:Math.cos(pet.a)*500, vy:Math.sin(pet.a)*500, from:'p',
+                         dmg: Math.max(5, Math.round(player.dmg*0.4)), r:3 });
+          if(soundOn) beep(760, .05, 'square', .025, -260);
+          pet.cd = 0.9;
+        }
+      }
+    } else if(profile.pet === 'heal'){
+      if(pet.cd <= 0){
+        pet.cd = 1;
+        if(player.hp < player.maxHp){
+          player.hp = Math.min(player.maxHp, player.hp + 2);
+          if(!REDUCED) particles.push({ x:player.x+rand(-10,10), y:player.y-20, vx:0, vy:-26, life:0.6, t:0, r:2.5, color:'#6fe58f' });
+        }
+      }
+    }
+  }
 
   // blink timers + дым из сильно подбитых танков
   for(const t of [player, ...(boss?[boss]:[]), ...enemies]){
@@ -1300,15 +1429,7 @@ function update(dt){
         if(dist(b.x,b.y,e.x,e.y) < e.r + b.r){
           e.hp -= b.dmg; consumed = true;
           explode(b.x, b.y, '#f1c40f', 4); sfx.hit();
-          if(e.hp <= 0){
-            const T = ETYPES[e.type];
-            explode(e.x, e.y, T.color, 18); sfx.boom(); vibrate(40);
-            state.score += e.score;
-            addFloat(e.x, e.y, '+' + e.score);
-            dropPickup(e.x, e.y);
-            enemies.splice(j,1);
-            checkWaveClear();
-          }
+          if(e.hp <= 0) destroyEnemy(j);
           break;
         }
       }
@@ -1318,13 +1439,7 @@ function update(dt){
           if(dist(b.x,b.y,dr.x,dr.y) < dr.r + b.r){
             dr.hp -= b.dmg; consumed = true;
             explode(b.x, b.y, '#f1c40f', 4); sfx.hit();
-            if(dr.hp <= 0){
-              explode(dr.x, dr.y, '#ff9f43', 16); sfx.boom(); vibrate(40);
-              state.score += dr.score;
-              addFloat(dr.x, dr.y, '+' + dr.score);
-              drones.splice(j,1);
-              checkWaveClear();
-            }
+            if(dr.hp <= 0) destroyDrone(j);
             break;
           }
         }
@@ -1378,7 +1493,11 @@ function update(dt){
   hpbar.style.width = Math.max(0, player.hp/player.maxHp*100) + '%';
   hpbar.classList.toggle('low', player.hp <= 30);
   $('scoretext').textContent = 'Счёт: ' + state.score;
+  const sbar = $('superbar');
+  sbar.style.width = Math.round(player.superCharge*100) + '%';
+  sbar.classList.toggle('ready', player.superCharge >= 1);
   const fx = [];
+  if(player.superCharge >= 1) fx.push(IS_TOUCH ? '⚡ Супер готов!' : '⚡ Супер готов — Q');
   if(player.shieldT > 0) fx.push('Щит ' + Math.ceil(player.shieldT));
   if(player.rapidT > 0) fx.push('Скорострел ' + Math.ceil(player.rapidT));
   if(player.tripleT > 0) fx.push('Тройной ' + Math.ceil(player.tripleT));
@@ -1623,6 +1742,41 @@ function drawTank(t, opts, c){
   c.restore();
 }
 
+// питомец: парящий мини-дрон (type: 'bot' | 'heal')
+function drawPet(c, x, y, type, aim, t){
+  const P = petById(type) || PETS[0];
+  c.save();
+  // тень на земле
+  c.fillStyle = 'rgba(0,0,0,0.2)';
+  c.beginPath(); c.ellipse(x + 5, y + 12, 9, 4.5, 0, 0, Math.PI*2); c.fill();
+  c.translate(x, y);
+  // пропеллер
+  c.strokeStyle = '#c8d2da'; c.lineWidth = 2;
+  const pa = (t || 0) * 24;
+  c.beginPath();
+  c.moveTo(-10*Math.cos(pa), -3 - 3*Math.sin(pa)); c.lineTo(10*Math.cos(pa), -3 + 3*Math.sin(pa));
+  c.stroke();
+  // корпус
+  c.fillStyle = P.dark;
+  c.beginPath(); c.arc(0, 0, 10, 0, Math.PI*2); c.fill();
+  c.fillStyle = P.color;
+  c.beginPath(); c.arc(0, 0, 8, 0, Math.PI*2); c.fill();
+  c.fillStyle = '#ffffff33';
+  c.beginPath(); c.arc(-2, -2.5, 5, 0, Math.PI*2); c.fill();
+  if(type === 'heal'){
+    c.fillStyle = '#e84c3d';
+    c.fillRect(-4.5, -1.5, 9, 3); c.fillRect(-1.5, -4.5, 3, 9);
+  } else {
+    // глаз смотрит на цель
+    const ea = aim || 0;
+    c.fillStyle = '#fff';
+    c.beginPath(); c.arc(Math.cos(ea)*2.5, Math.sin(ea)*2.5, 3.6, 0, Math.PI*2); c.fill();
+    c.fillStyle = '#14181c';
+    c.beginPath(); c.arc(Math.cos(ea)*3.8, Math.sin(ea)*3.8, 1.7, 0, Math.PI*2); c.fill();
+  }
+  c.restore();
+}
+
 function drawPickup(m){
   const pulse = 1 + Math.sin(m.t*6)*0.08;
   const fade = m.t > 9 ? (Math.sin(m.t*14) > 0 ? 1 : 0.3) : 1;
@@ -1771,6 +1925,7 @@ function render(){
     if(state.mode !== 'menu'){
       const sk = playerSkin();
       drawTank(player, { hullColor:sk.hull, darkColor:sk.dark, scale:1, blink:player.blink, shield:player.shieldT>0, fx:sk.fx });
+      if(profile.pet) drawPet(ctx, pet.x, pet.y + Math.sin(pet.t*6)*2, profile.pet, pet.a, pet.t);
     }
   }
 
@@ -1876,6 +2031,19 @@ function render(){
     ctx.fillStyle = '#fff'; ctx.font = '16px "Russo One", sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('ОГОНЬ', fb.x, fb.y);
+
+    // кнопка супера с кольцом заряда
+    const sb = superBtnPos();
+    const ready = player.superCharge >= 1;
+    ctx.fillStyle = ready ? ('rgba(241,196,15,' + (0.55 + 0.25*Math.sin(state.time*8)) + ')') : '#222a33aa';
+    ctx.beginPath(); ctx.arc(sb.x, sb.y, sb.r, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#ffffff44'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(sb.x, sb.y, sb.r, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(sb.x, sb.y, sb.r - 3, -Math.PI/2, -Math.PI/2 + Math.PI*2*player.superCharge); ctx.stroke();
+    ctx.fillStyle = ready ? '#101820' : '#93a1ad';
+    ctx.font = '20px "Russo One", sans-serif';
+    ctx.fillText('⚡', sb.x, sb.y + 1);
   }
 
   // wave banner
@@ -1945,6 +2113,44 @@ function renderShop(){
       });
     }
     card.append(prev, nm, btn);
+    grid.append(card);
+  }
+
+  // ---- питомцы ----
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'width:100%;font-size:14px;color:var(--ink-dim);letter-spacing:2px;margin-top:8px';
+  hdr.textContent = '— ПИТОМЦЫ —';
+  grid.append(hdr);
+  for(const p of PETS){
+    const card = document.createElement('div'); card.className = 'skincard';
+    const prev = document.createElement('canvas');
+    prev.className = 'prev'; prev.width = 76; prev.height = 76;
+    drawPet(prev.getContext('2d'), 38, 38, p.id, -Math.PI/2, 1);
+    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = p.name;
+    const ds = document.createElement('div');
+    ds.style.cssText = 'font-size:10px;color:var(--ink-dim);line-height:1.3';
+    ds.textContent = p.desc;
+    const btn = document.createElement('button'); btn.className = 'skbtn';
+    const owned = profile.pets.includes(p.id);
+    if(profile.pet === p.id){
+      btn.textContent = 'УБРАТЬ'; btn.classList.add('owned');
+      btn.addEventListener('click', ()=>{ profile.pet = null; saveProfile(); renderShop(); });
+    } else if(owned){
+      btn.textContent = 'ВЫБРАТЬ'; btn.classList.add('owned');
+      btn.addEventListener('click', ()=>{ profile.pet = p.id; saveProfile(); renderShop(); });
+    } else {
+      btn.textContent = p.cost + ' 🪙';
+      btn.disabled = profile.coins < p.cost;
+      btn.addEventListener('click', ()=>{
+        if(profile.coins < p.cost) return;
+        profile.coins -= p.cost;
+        profile.pets.push(p.id);
+        profile.pet = p.id;
+        saveProfile(); audio(); sfx.pickup();
+        renderShop();
+      });
+    }
+    card.append(prev, nm, ds, btn);
     grid.append(card);
   }
 }

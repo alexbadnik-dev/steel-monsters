@@ -70,6 +70,27 @@ html{height:100%}
 .chip{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;font-size:11px;color:#101820;flex:none}
 #wavetitle{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:6;pointer-events:none;
   font-size:clamp(26px,6vw,44px);letter-spacing:3px;color:var(--ink);text-shadow:0 4px 16px #000;opacity:0;transition:opacity .3s;white-space:nowrap}
+.btn.small{font-size:15px;padding:10px 22px}
+.menurow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+#nameInput{pointer-events:auto;background:#141a20;border:2px solid #39434d;border-radius:10px;color:var(--ink);
+  font-family:inherit;font-size:16px;padding:10px 14px;text-align:center;width:min(280px,80vw)}
+#nameInput:focus{outline:2px solid var(--accent);border-color:var(--accent)}
+#nameInput::placeholder{color:#5c6a76}
+.boardlist{display:flex;flex-direction:column;gap:6px;width:min(440px,88vw);max-height:48vh;overflow:auto;pointer-events:auto}
+.boardrow{display:flex;align-items:center;gap:10px;background:#ffffff0d;border-radius:8px;padding:8px 14px;font-size:15px}
+.boardrow .pl{color:var(--gold);width:26px;flex:none;text-align:left}
+.boardrow .nm{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.boardrow .wv{color:var(--ink-dim);font-size:12px;flex:none}
+.boardrow .sc{color:var(--ink);flex:none;min-width:54px;text-align:right}
+.shopgrid{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:580px;max-height:50vh;overflow:auto;pointer-events:auto;padding:4px}
+.skincard{width:120px;background:#ffffff0d;border-radius:12px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.skincard .prev{width:54px;height:54px;border-radius:12px;position:relative;border:2px solid #0006}
+.skincard .nm{font-size:13px}
+.skbtn{pointer-events:auto;cursor:pointer;border:0;border-radius:8px;font-family:inherit;font-size:13px;padding:7px 12px;
+  background:linear-gradient(180deg,#6fe58f,#2e9c4f);color:#0c2414;width:100%}
+.skbtn.owned{background:linear-gradient(180deg,#9db0bf,#5c7183);color:#101820}
+.skbtn.equipped{background:#2a3b31;color:var(--accent);cursor:default}
+.skbtn:disabled{opacity:.45;cursor:default}
 @media (prefers-reduced-motion: reduce){ #hpbar{transition:none} }
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap">
@@ -115,9 +136,29 @@ html{height:100%}
     <span><span class="chip" style="background:#f1c40f">⚡</span>скорострел</span>
     <span><span class="chip" style="background:#ff9f43">3×</span>тройной</span>
   </div>
+  <input id="nameInput" maxlength="16" placeholder="Имя танкиста" autocomplete="off">
   <p class="record" id="menuBest" hidden></p>
   <button class="btn" id="startBtn">В БОЙ!</button>
   <button class="btn gray" id="contBtn" hidden></button>
+  <div class="menurow">
+    <button class="btn gray small" id="shopBtn">🛒 МАГАЗИН</button>
+    <button class="btn gray small" id="boardBtn">🏆 РЕЙТИНГ</button>
+  </div>
+  <p class="record" id="coinsText"></p>
+</div>
+
+<div class="overlay" id="shop" hidden>
+  <h1 class="gold">МАГАЗИН</h1>
+  <p id="shopCoins"></p>
+  <div class="shopgrid" id="shopGrid"></div>
+  <button class="btn gray" id="shopBack">НАЗАД</button>
+</div>
+
+<div class="overlay" id="board" hidden>
+  <h1>РЕЙТИНГ</h1>
+  <p>Лучшие бои на этом устройстве</p>
+  <div class="boardlist" id="boardList"></div>
+  <button class="btn gray" id="boardBack">НАЗАД</button>
 </div>
 
 <div class="overlay" id="pause" hidden>
@@ -130,17 +171,21 @@ html{height:100%}
   <h1 class="red">ПОДБИТ!</h1>
   <p class="score-final" id="loseScore"></p>
   <p class="record" id="loseBest"></p>
+  <p class="record" id="losePlace"></p>
   <p>Танк отправлен в ремонт. Попробуй ещё раз!</p>
   <button class="btn" id="retryBtn">ЕЩЁ РАЗ</button>
   <button class="btn gray" id="retryStartBtn" hidden>С ПЕРВОЙ ВОЛНЫ</button>
+  <button class="btn gray small" id="loseMenuBtn">В МЕНЮ</button>
 </div>
 
 <div class="overlay" id="victory" hidden>
   <h1 class="gold">ПОБЕДА!</h1>
   <p class="score-final" id="winScore"></p>
   <p class="record" id="winBest"></p>
+  <p class="record" id="winPlace"></p>
   <p>Все 100 волн пройдены, финальный босс уничтожен. Поле боя — твоё!</p>
   <button class="btn" id="winBtn">ИГРАТЬ СНОВА</button>
+  <button class="btn gray small" id="winMenuBtn">В МЕНЮ</button>
 </div>
 
 <script>
@@ -188,6 +233,51 @@ resize();
 function loadBest(){ try{ return parseInt(localStorage.getItem('sm_best')||'0',10)||0; }catch(e){ return 0; } }
 function saveBest(v){ try{ localStorage.setItem('sm_best', String(v)); }catch(e){} }
 let best = loadBest();
+
+// ---------- профиль: имя, монеты, скины ----------
+const SKINS = [
+  { id:'green',  name:'Зелёный',    cost:0,    hull:'#58d97b', dark:'#1f7a40' },
+  { id:'blue',   name:'Синий',      cost:200,  hull:'#6db3f2', dark:'#2d5f8a' },
+  { id:'desert', name:'Пустынный',  cost:200,  hull:'#d8c27a', dark:'#7a6a3a' },
+  { id:'pink',   name:'Розовый',    cost:300,  hull:'#f78fb3', dark:'#8f3a5e' },
+  { id:'violet', name:'Фиолетовый', cost:400,  hull:'#a29bfe', dark:'#5546c8' },
+  { id:'orange', name:'Оранжевый',  cost:400,  hull:'#ffa94d', dark:'#9c5a14' },
+  { id:'ghost',  name:'Призрак',    cost:800,  hull:'#e8eef2', dark:'#7d8a94' },
+  { id:'gold',   name:'Золотой',    cost:1500, hull:'#f6d32d', dark:'#8a6d08' }
+];
+function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
+function loadProfile(){
+  try{
+    const p = JSON.parse(localStorage.getItem('sm_profile') || '{}');
+    return {
+      name: typeof p.name === 'string' ? p.name.slice(0,16) : '',
+      coins: Number.isFinite(p.coins) ? Math.max(0, Math.floor(p.coins)) : 0,
+      skins: Array.isArray(p.skins) ? p.skins.filter(s => typeof s === 'string') : ['green'],
+      equipped: typeof p.equipped === 'string' ? p.equipped : 'green'
+    };
+  }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green' }; }
+}
+const profile = loadProfile();
+if(!profile.skins.includes('green')) profile.skins.push('green');
+if(!profile.skins.includes(profile.equipped)) profile.equipped = 'green';
+function saveProfile(){ try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){} }
+
+// ---------- рейтинг (топ-10 на этом устройстве) ----------
+function loadBoard(){
+  try{
+    const b = JSON.parse(localStorage.getItem('sm_board') || '[]');
+    return Array.isArray(b) ? b.filter(r => r && typeof r.name === 'string' && Number.isFinite(r.score)) : [];
+  }catch(e){ return []; }
+}
+let board = loadBoard();
+function submitScore(name, score, wave){
+  const entry = { name, score, wave, ts: Date.now() };
+  board.push(entry);
+  board.sort((a,b) => b.score - a.score);
+  board = board.slice(0, 10);
+  try{ localStorage.setItem('sm_board', JSON.stringify(board)); }catch(e){}
+  return board.indexOf(entry) + 1; // 0 — не вошёл в топ
+}
 
 // ---------- checkpoint: продолжить с начала десятки после побеждённого босса ----------
 function loadCheckpoint(){
@@ -237,8 +327,27 @@ function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e
 const ETYPES = {
   scout:   { r:16, hp:20, sp:150, dmg:6,  fire:[1.0,1.9], score:80,  color:'#9fd1e8', dark:'#45758e', scale:0.68, bspd:360, br:3.5 },
   soldier: { r:19, hp:35, sp:95,  dmg:8,  fire:[1.4,2.6], score:100, color:'#8fa6b8', dark:'#4e6274', scale:0.82, bspd:300, br:4 },
-  heavy:   { r:25, hp:90, sp:52,  dmg:14, fire:[2.0,3.2], score:250, color:'#c2a06b', dark:'#6e5634', scale:1.12, bspd:260, br:6 }
+  heavy:   { r:25, hp:90, sp:52,  dmg:14, fire:[2.0,3.2], score:250, color:'#c2a06b', dark:'#6e5634', scale:1.12, bspd:260, br:6 },
+  // камикадзе: не стреляет, несётся на игрока и взрывается при контакте
+  kam:     { r:15, hp:18, sp:235, dmg:26, fire:[99,99],   score:120, color:'#ff8d6b', dark:'#8a2f24', scale:0.62, bspd:0,   br:0 },
+  // снайпер: держится далеко, целится лазером и бьёт точным мощным выстрелом
+  sniper:  { r:18, hp:30, sp:70,  dmg:22, fire:[3.0,4.4], score:180, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4 }
 };
+
+// ---------- биомы: палитра поля меняется каждые 10 волн ----------
+const BIOMES = [
+  { name:'СТЕПЬ',         ground:'#20262e', grid:'#2a323c', patch:'#1b2128', bush:['#263f2d','#31513a'], rock:['#4e5861','#626d77'], crater:['#161b20','#2e3742','#10141a'] },
+  { name:'ПУСТЫНЯ',       ground:'#3b3120', grid:'#474028', patch:'#342a1b', bush:['#6b5e32','#80713f'], rock:['#8a7a5a','#a08f6a'], crater:['#2e2516','#564a2e','#241c10'] },
+  { name:'СНЕГА',         ground:'#46505c', grid:'#525e6c', patch:'#3c4652', bush:['#2f4a3c','#3c5c4a'], rock:['#6a7a88','#8494a2'], crater:['#38424e','#5a6876','#2e3842'] },
+  { name:'БОЛОТО',        ground:'#232e22', grid:'#2c3a2a', patch:'#1c261b', bush:['#2e4f2a','#3e6636'], rock:['#4a5648','#5d6b5a'], crater:['#15241e','#2e4a3e','#0f1c16'] },
+  { name:'РЖАВЫЕ ЗЕМЛИ',  ground:'#302420', grid:'#3c2d27', patch:'#281e1a', bush:['#4f3a26','#64492e'], rock:['#6a4a3a','#80594a'], crater:['#221815','#44302a','#180f0c'] },
+  { name:'ДЖУНГЛИ',       ground:'#1d2b20', grid:'#26382a', patch:'#172218', bush:['#2c5c33','#3b7a43'], rock:['#44584a','#56705c'], crater:['#132016','#2e4a36','#0e1810'] },
+  { name:'ПЕПЕЛИЩЕ',      ground:'#26242a', grid:'#312e36', patch:'#1e1c22', bush:['#4a4450','#5a5362'], rock:['#55505c','#6a6472'], crater:['#1a181e','#3a363f','#121014'] },
+  { name:'ЛЕДНИК',        ground:'#2a3a48', grid:'#345061', patch:'#223240', bush:['#3a6a74','#4a8490'], rock:['#5a7a8a','#6e94a4'], crater:['#1e2c38','#3e5a6c','#16212a'] },
+  { name:'СУМРАК',        ground:'#241f33', grid:'#2e2840', patch:'#1c1828', bush:['#3a2f55','#4a3d6a'], rock:['#554a70','#6a5e85'], crater:['#1a1626','#3a3252','#120f1c'] },
+  { name:'ВУЛКАН',        ground:'#2b1c1a', grid:'#38231f', patch:'#221513', bush:['#5a2c20','#743828'], rock:['#5c4038','#705048'], crater:['#3a1410','#7a3020','#c2402a'] }
+];
+function biomeFor(n){ return BIOMES[Math.min(BIOMES.length-1, Math.floor((n-1)/10))]; }
 const TOTAL_WAVES = 100;
 const BOSS_EVERY = 10;              // каждая 10-я волна — босс, всего 10 боссов
 const BOSS_COUNT = TOTAL_WAVES / BOSS_EVERY;
@@ -260,12 +369,19 @@ function diffFor(n){
 // Состав обычной волны: число врагов и доля тяжёлых растут с номером
 function waveComposition(n){
   const count = Math.min(12, 3 + Math.floor(n/8) + (n > 4 && Math.random() < 0.5 ? 1 : 0));
-  const heavyW = n < 4 ? 0 : Math.min(0.38, 0.08 + n*0.004);
-  const scoutW = n < 2 ? 0 : Math.min(0.4, 0.15 + n*0.003);
+  const heavyW = n < 4  ? 0 : Math.min(0.3,  0.08 + n*0.003);
+  const kamW   = n < 6  ? 0 : Math.min(0.2,  0.05 + n*0.0025);
+  const snipW  = n < 12 ? 0 : Math.min(0.16, 0.04 + n*0.0018);
+  const scoutW = n < 2  ? 0 : Math.min(0.28, 0.15 + n*0.002);
   const list = [];
   for(let i=0;i<count;i++){
     const r = Math.random();
-    list.push(r < heavyW ? 'heavy' : r < heavyW + scoutW ? 'scout' : 'soldier');
+    let acc = heavyW;
+    if(r < acc){ list.push('heavy'); continue; }
+    if(r < (acc += kamW)){ list.push('kam'); continue; }
+    if(r < (acc += snipW)){ list.push('sniper'); continue; }
+    if(r < (acc += scoutW)){ list.push('scout'); continue; }
+    list.push('soldier');
   }
   return list;
 }
@@ -280,6 +396,14 @@ let bullets = [], enemies = [], pickups = [], particles = [], tracks = [], float
 let boss = null;
 let waveBanner = { text:'', t:0 };
 let minionTimer = 0;
+let waveClearT = null;
+function checkWaveClear(){
+  if(isBossWave(state.wave) || state.mode !== 'play' || enemies.length || waveClearT) return;
+  waveClearT = setTimeout(()=>{
+    waveClearT = null;
+    if(state.mode === 'play' && enemies.length === 0 && !isBossWave(state.wave)) startWave(state.wave + 1);
+  }, 900);
+}
 
 function rand(a,b){ return a + Math.random()*(b-a); }
 function dist(ax,ay,bx,by){ return Math.hypot(ax-bx, ay-by); }
@@ -305,8 +429,10 @@ function spawnEnemy(type, waveN){
     sp: T.sp*D.sp, dmg: T.dmg*D.dmg, bspd: T.bspd*D.bspd, br: T.br,
     fireMin: T.fire[0]*D.fire, fireMax: T.fire[1]*D.fire,
     score: Math.round(T.score*D.score),
-    hull:0, turret:0,
-    fireT: rand(T.fire[0]*D.fire, T.fire[1]*D.fire), keep: rand(170,280), strafe: Math.random()<.5?1:-1,
+    hull:0, turret:0, lockA:null,
+    fireT: rand(T.fire[0]*D.fire, T.fire[1]*D.fire),
+    keep: type === 'sniper' ? rand(400,500) : rand(170,280),
+    strafe: Math.random()<.5?1:-1,
     blink:0, nextBlink: rand(1,4), trackT:0
   });
 }
@@ -330,13 +456,17 @@ function spawnBoss(){
 function startWave(n){
   state.wave = n;
   saveCheckpoint(n);
+  if(waveClearT){ clearTimeout(waveClearT); waveClearT = null; }
   if(isBossWave(n)){
     $('wavetext').textContent = 'Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС';
     waveBanner = { text: n === TOTAL_WAVES ? 'ФИНАЛЬНЫЙ БОСС!' : ('БОСС ' + bossNumOf(n) + '!'), t: 2.2 };
     spawnBoss();
   } else {
     $('wavetext').textContent = 'Волна ' + n + ' / ' + TOTAL_WAVES;
-    waveBanner = { text: 'ВОЛНА ' + n, t: 2.2 };
+    // на входе в новую декаду объявляем биом
+    waveBanner = n % 10 === 1
+      ? { text: 'ВОЛНА ' + n + ' · ' + biomeFor(n).name, t: 2.6 }
+      : { text: 'ВОЛНА ' + n, t: 2.2 };
     waveComposition(n).forEach((type,i)=> setTimeout(()=>{ if(state.mode==='play') spawnEnemy(type, n); }, i*420));
   }
 }
@@ -360,7 +490,7 @@ function resetGame(wave, score, hp){
   startWave(wave ?? 1);
 }
 
-const OVERLAYS = ['menu','pause','gameover','victory'];
+const OVERLAYS = ['menu','pause','gameover','victory','shop','board'];
 function setOverlay(id){
   for(const o of OVERLAYS) $(o).hidden = (o!==id);
   $('hud').hidden = (id!==null && id!=='pause');
@@ -407,6 +537,12 @@ function endGame(win){
   $('bossbarwrap').hidden = true;
   if(state.score > best){ best = state.score; saveBest(best); }
   const rec = 'Рекорд: ' + best;
+  // монеты за бой (10 очков = 1 монета) и место в рейтинге
+  const earned = Math.round(state.score / 10);
+  profile.coins += earned; saveProfile();
+  const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave);
+  const info = '+' + earned + ' 🪙' + (place ? ' · Место в рейтинге: ' + place : '');
+  $(win ? 'winPlace' : 'losePlace').textContent = info;
   if(win){
     sfx.win(); vibrate(200);
     $('winScore').textContent = 'Счёт: ' + state.score;
@@ -425,6 +561,7 @@ function endGame(win){
 // ---------- input ----------
 const keys = {};
 window.addEventListener('keydown', e=>{
+  if(e.target && e.target.tagName === 'INPUT') return; // не мешаем вводу имени
   keys[e.code] = true;
   if(e.code === 'Escape'){
     if(state.mode === 'play') pauseGame(); else if(state.mode === 'pause') resumeGame();
@@ -521,7 +658,8 @@ function playerShoot(){
   state.shake = Math.min(state.shake + (REDUCED?0:2), 6);
 }
 function enemyShoot(e){
-  const a = e.turret + rand(-0.08, 0.08);
+  // снайпер бьёт точно по зафиксированному лазером направлению
+  const a = (e.type === 'sniper' && e.lockA != null) ? e.lockA : e.turret + rand(-0.08, 0.08);
   bullets.push({ x:e.x + Math.cos(a)*(e.r+12), y:e.y + Math.sin(a)*(e.r+12),
                  vx:Math.cos(a)*e.bspd, vy:Math.sin(a)*e.bspd, from:'e', dmg:e.dmg, r:e.br });
   flash(e.x + Math.cos(a)*(e.r+14), e.y + Math.sin(a)*(e.r+14), a);
@@ -642,15 +780,34 @@ function update(dt){
   }
 
   // enemies AI
+  let anyDead = false;
   for(const e of enemies){
     const T = ETYPES[e.type];
     const a = angTo(e.x,e.y,player.x,player.y);
     const d = dist(e.x,e.y,player.x,player.y);
+
+    // камикадзе: несётся напрямик и взрывается при контакте
+    if(e.type === 'kam'){
+      e.x += Math.cos(a)*e.sp*dt; e.y += Math.sin(a)*e.sp*dt;
+      e.hull = lerpAng(e.hull, a, Math.min(1, dt*8));
+      e.turret = e.hull;
+      e.trackT -= dt;
+      if(e.trackT <= 0){ leaveTrack(e, T.scale); e.trackT = 0.07; }
+      if(d < e.r + player.r + 2){
+        explode(e.x, e.y, '#ff8d6b', 20); sfx.boom(); vibrate(90);
+        state.shake = Math.min(state.shake + (REDUCED?0:6), 12);
+        damagePlayer(e.dmg);
+        e.dead = true; anyDead = true;
+      }
+      continue;
+    }
+
     let vx = 0, vy = 0;
     if(d > e.keep + 20){ vx = Math.cos(a)*e.sp; vy = Math.sin(a)*e.sp; }
     else if(d < e.keep - 20){ vx = -Math.cos(a)*e.sp*0.8; vy = -Math.sin(a)*e.sp*0.8; }
-    vx += Math.cos(a + Math.PI/2) * e.sp*0.45 * e.strafe;
-    vy += Math.sin(a + Math.PI/2) * e.sp*0.45 * e.strafe;
+    const strafeK = e.type === 'sniper' ? 0.18 : 0.45;
+    vx += Math.cos(a + Math.PI/2) * e.sp*strafeK * e.strafe;
+    vy += Math.sin(a + Math.PI/2) * e.sp*strafeK * e.strafe;
     e.x += vx*dt; e.y += vy*dt;
     if(e.x < e.r || e.x > W-e.r) e.strafe *= -1;
     if(e.y < e.r || e.y > H-e.r) e.strafe *= -1;
@@ -661,10 +818,24 @@ function update(dt){
       e.trackT -= dt;
       if(e.trackT <= 0){ leaveTrack(e, T.scale); e.trackT = 0.1; }
     }
-    e.turret = lerpAng(e.turret, a, Math.min(1, dt*5));
+    // снайпер фиксирует прицел за 0.8с до выстрела — лазер видно, можно увернуться
+    if(e.type === 'sniper' && e.fireT <= 0.8 && e.lockA == null) e.lockA = a;
+    e.turret = lerpAng(e.turret, e.lockA ?? a, Math.min(1, dt*(e.lockA != null ? 16 : 5)));
     e.fireT -= dt;
-    if(e.fireT <= 0 && d < 560){ enemyShoot(e); e.fireT = rand(e.fireMin, e.fireMax); }
+    if(e.fireT <= 0){
+      if(d < (e.type === 'sniper' ? 950 : 560)){
+        enemyShoot(e);
+        e.fireT = rand(e.fireMin, e.fireMax);
+      } else {
+        e.fireT = 0.4; // цель вне досягаемости — не копим устаревший прицел
+      }
+      e.lockA = null;
+    }
     if(d < e.r + player.r + 2){ damagePlayer(12*dt); e.x -= Math.cos(a)*40*dt; e.y -= Math.sin(a)*40*dt; }
+  }
+  if(anyDead){
+    enemies = enemies.filter(e => !e.dead);
+    checkWaveClear();
   }
 
   // boss AI
@@ -720,9 +891,7 @@ function update(dt){
             addFloat(e.x, e.y, '+' + e.score);
             dropPickup(e.x, e.y);
             enemies.splice(j,1);
-            if(!isBossWave(state.wave) && enemies.length === 0 && state.mode === 'play'){
-              setTimeout(()=>{ if(state.mode==='play') startWave(state.wave+1); }, 900);
-            }
+            checkWaveClear();
           }
           break;
         }
@@ -899,17 +1068,18 @@ function render(){
     ctx.translate(rand(-state.shake, state.shake), rand(-state.shake, state.shake));
   }
 
-  // ground
-  ctx.fillStyle = '#20262e';
+  // ground (палитра биома текущей декады)
+  const B = state.mode === 'menu' ? BIOMES[0] : biomeFor(state.wave);
+  ctx.fillStyle = B.ground;
   ctx.fillRect(-20, -20, W+40, H+40);
-  ctx.strokeStyle = '#2a323c';
+  ctx.strokeStyle = B.grid;
   ctx.lineWidth = 1;
   const g = 56;
   ctx.beginPath();
   for(let x = 0; x <= W; x += g){ ctx.moveTo(x, 0); ctx.lineTo(x, H); }
   for(let y = 0; y <= H; y += g){ ctx.moveTo(0, y); ctx.lineTo(W, y); }
   ctx.stroke();
-  ctx.fillStyle = '#1b2128';
+  ctx.fillStyle = B.patch;
   for(let i=0;i<6;i++){
     const px = (i*197.3) % W, py = (i*149.7 + 80) % H;
     ctx.beginPath(); ctx.ellipse(px, py, 46, 30, i, 0, Math.PI*2); ctx.fill();
@@ -920,29 +1090,29 @@ function render(){
     ctx.save();
     ctx.translate(d.x, d.y); ctx.rotate(d.a); ctx.scale(d.s, d.s);
     if(d.kind === 'crater'){
-      ctx.fillStyle = '#161b20';
+      ctx.fillStyle = B.crater[0];
       ctx.beginPath(); ctx.ellipse(0, 0, 20, 14, 0, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = '#2e3742'; ctx.lineWidth = 3;
+      ctx.strokeStyle = B.crater[1]; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.ellipse(0, 0, 20, 14, 0, -2.6, 0.4); ctx.stroke();
-      ctx.fillStyle = '#10141a';
+      ctx.fillStyle = B.crater[2];
       ctx.beginPath(); ctx.ellipse(2, 2, 11, 7, 0, 0, Math.PI*2); ctx.fill();
     } else if(d.kind === 'bush'){
-      ctx.fillStyle = '#263f2d';
+      ctx.fillStyle = B.bush[0];
       for(const [bx,by,br] of [[-8,2,10],[7,4,9],[0,-6,11],[10,-4,7]]){
         ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI*2); ctx.fill();
       }
-      ctx.fillStyle = '#31513a';
+      ctx.fillStyle = B.bush[1];
       for(const [bx,by,br] of [[-6,-2,7],[5,-5,6],[2,3,7]]){
         ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI*2); ctx.fill();
       }
     } else {
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
       ctx.beginPath(); ctx.ellipse(2, 4, 13, 9, 0, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#4e5861';
+      ctx.fillStyle = B.rock[0];
       ctx.beginPath();
       ctx.moveTo(-12,4); ctx.lineTo(-8,-7); ctx.lineTo(2,-10); ctx.lineTo(11,-3); ctx.lineTo(10,6); ctx.lineTo(-4,8);
       ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#626d77';
+      ctx.fillStyle = B.rock[1];
       ctx.beginPath();
       ctx.moveTo(-8,-2); ctx.lineTo(-5,-6); ctx.lineTo(3,-8); ctx.lineTo(8,-3); ctx.lineTo(2,0);
       ctx.closePath(); ctx.fill();
@@ -964,14 +1134,38 @@ function render(){
 
   for(const m of pickups) drawPickup(m);
 
+  // лазерные прицелы снайперов (под танками)
+  for(const e of enemies){
+    if(e.type === 'sniper' && e.lockA != null){
+      ctx.save();
+      ctx.globalAlpha = 0.35 + 0.3*Math.abs(Math.sin(state.time*16));
+      ctx.strokeStyle = '#ff5540'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(e.x + Math.cos(e.lockA)*(e.r+6), e.y + Math.sin(e.lockA)*(e.r+6));
+      ctx.lineTo(e.x + Math.cos(e.lockA)*1400, e.y + Math.sin(e.lockA)*1400);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   // tanks
   if(state.mode === 'play' || state.mode === 'pause' || state.mode === 'menu'){
     for(const e of enemies){
       const T = ETYPES[e.type];
       drawTank(e, { hullColor:T.color, darkColor:T.dark, scale:T.scale, angry:true, blink:e.blink });
+      if(e.type === 'kam'){
+        ctx.strokeStyle = '#ff5540';
+        ctx.globalAlpha = 0.35 + 0.3*Math.sin(state.time*14);
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 8, 0, Math.PI*2); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
     if(boss) drawTank(boss, { hullColor: boss.enraged ? '#ff5540' : '#e84c3d', darkColor:'#7e1d13', scale:2.3, angry:true, rage:boss.enraged, blink:boss.blink });
-    if(state.mode !== 'menu') drawTank(player, { hullColor:'#58d97b', darkColor:'#1f7a40', scale:1, blink:player.blink, shield:player.shieldT>0 });
+    if(state.mode !== 'menu'){
+      const sk = skinById(profile.equipped);
+      drawTank(player, { hullColor:sk.hull, darkColor:sk.dark, scale:1, blink:player.blink, shield:player.shieldT>0 });
+    }
   }
 
   // enemy HP bars
@@ -1071,6 +1265,74 @@ $('quitBtn').addEventListener('click', ()=>{
   updateMenuBest();
   setOverlay('menu');
 });
+$('loseMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); });
+$('winMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); });
+
+// ---------- магазин ----------
+function renderShop(){
+  $('shopCoins').textContent = '🪙 ' + profile.coins + ' · монеты за очки в бою (10 очков = 1 🪙)';
+  const grid = $('shopGrid');
+  grid.innerHTML = '';
+  for(const s of SKINS){
+    const card = document.createElement('div'); card.className = 'skincard';
+    const prev = document.createElement('div'); prev.className = 'prev';
+    prev.style.background = s.hull;
+    const inner = document.createElement('div');
+    inner.style.cssText = 'position:absolute;left:13px;top:13px;width:24px;height:24px;border-radius:50%;background:' + s.dark;
+    prev.appendChild(inner);
+    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = s.name;
+    const btn = document.createElement('button'); btn.className = 'skbtn';
+    const owned = profile.skins.includes(s.id);
+    if(profile.equipped === s.id){
+      btn.textContent = 'ВЫБРАН'; btn.classList.add('equipped'); btn.disabled = true;
+    } else if(owned){
+      btn.textContent = 'ВЫБРАТЬ'; btn.classList.add('owned');
+      btn.addEventListener('click', ()=>{ profile.equipped = s.id; saveProfile(); renderShop(); });
+    } else {
+      btn.textContent = s.cost + ' 🪙';
+      btn.disabled = profile.coins < s.cost;
+      btn.addEventListener('click', ()=>{
+        if(profile.coins < s.cost) return;
+        profile.coins -= s.cost;
+        profile.skins.push(s.id);
+        profile.equipped = s.id;
+        saveProfile(); audio(); sfx.pickup();
+        renderShop();
+      });
+    }
+    card.append(prev, nm, btn);
+    grid.append(card);
+  }
+}
+$('shopBtn').addEventListener('click', ()=>{ renderShop(); setOverlay('shop'); });
+$('shopBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
+
+// ---------- рейтинг ----------
+function renderBoard(){
+  const list = $('boardList');
+  list.innerHTML = '';
+  if(!board.length){
+    const row = document.createElement('div'); row.className = 'boardrow';
+    row.innerHTML = '<span class="nm">Пока пусто — сыграй первый бой!</span>';
+    list.append(row);
+    return;
+  }
+  board.forEach((r, i)=>{
+    const row = document.createElement('div'); row.className = 'boardrow';
+    row.innerHTML = '<span class="pl">' + (i+1) + '</span><span class="nm"></span>' +
+                    '<span class="wv">волна ' + (r.wave|0) + '</span><span class="sc">' + (r.score|0) + '</span>';
+    row.querySelector('.nm').textContent = r.name; // textContent — имя не исполняется как HTML
+    list.append(row);
+  });
+}
+$('boardBtn').addEventListener('click', ()=>{ renderBoard(); setOverlay('board'); });
+$('boardBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
+
+// ---------- имя игрока ----------
+$('nameInput').addEventListener('input', e=>{
+  profile.name = e.target.value.slice(0,16);
+  saveProfile();
+});
 $('pauseBtn').addEventListener('click', pauseGame);
 
 function updateSoundBtn(){ $('soundBtn').textContent = soundOn ? '🔊' : '🔇'; }
@@ -1087,6 +1349,8 @@ function updateMenuBest(){
   $('menuBest').textContent = 'Рекорд: ' + best;
   $('contBtn').hidden = checkpoint <= 1;
   $('contBtn').textContent = 'С ВОЛНЫ ' + checkpoint;
+  $('coinsText').textContent = '🪙 ' + profile.coins;
+  $('nameInput').value = profile.name;
 }
 
 if(IS_TOUCH){

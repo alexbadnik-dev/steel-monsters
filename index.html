@@ -97,7 +97,7 @@ html{height:100%}
 
 <div class="overlay" id="menu">
   <h1>СТАЛЬНЫЕ&nbsp;МОНСТРЫ</h1>
-  <p>Отбей пять волн вражеских танков и уничтожь босса!</p>
+  <p>Пробейся сквозь 100 волн и одолей 10 боссов! Каждый побеждённый босс делает твой танк сильнее.</p>
   <div class="keys" id="keysDesktop">
     <span><b>WASD</b> — движение</span>
     <span><b>Мышь</b> — прицел</span>
@@ -117,6 +117,7 @@ html{height:100%}
   </div>
   <p class="record" id="menuBest" hidden></p>
   <button class="btn" id="startBtn">В БОЙ!</button>
+  <button class="btn gray" id="contBtn" hidden></button>
 </div>
 
 <div class="overlay" id="pause" hidden>
@@ -131,13 +132,14 @@ html{height:100%}
   <p class="record" id="loseBest"></p>
   <p>Танк отправлен в ремонт. Попробуй ещё раз!</p>
   <button class="btn" id="retryBtn">ЕЩЁ РАЗ</button>
+  <button class="btn gray" id="retryStartBtn" hidden>С ПЕРВОЙ ВОЛНЫ</button>
 </div>
 
 <div class="overlay" id="victory" hidden>
   <h1 class="gold">ПОБЕДА!</h1>
   <p class="score-final" id="winScore"></p>
   <p class="record" id="winBest"></p>
-  <p>Босс уничтожен. Поле боя — твоё!</p>
+  <p>Все 100 волн пройдены, финальный босс уничтожен. Поле боя — твоё!</p>
   <button class="btn" id="winBtn">ИГРАТЬ СНОВА</button>
 </div>
 
@@ -187,6 +189,22 @@ function loadBest(){ try{ return parseInt(localStorage.getItem('sm_best')||'0',1
 function saveBest(v){ try{ localStorage.setItem('sm_best', String(v)); }catch(e){} }
 let best = loadBest();
 
+// ---------- checkpoint: продолжить с начала десятки после побеждённого босса ----------
+function loadCheckpoint(){
+  try{
+    const v = parseInt(localStorage.getItem('sm_wave')||'1',10);
+    if(v > 1 && v < 100 && (v-1) % 10 === 0) return v; // 11, 21, ... 91
+  }catch(e){}
+  return 1;
+}
+let checkpoint = loadCheckpoint();
+function saveCheckpoint(n){
+  if(n % 10 === 1 && n > checkpoint && n > 1){
+    checkpoint = n;
+    try{ localStorage.setItem('sm_wave', String(n)); }catch(e){}
+  }
+}
+
 // ---------- audio (synth, no assets) ----------
 let AC = null;
 let soundOn = true;
@@ -221,19 +239,41 @@ const ETYPES = {
   soldier: { r:19, hp:35, sp:95,  dmg:8,  fire:[1.4,2.6], score:100, color:'#8fa6b8', dark:'#4e6274', scale:0.82, bspd:300, br:4 },
   heavy:   { r:25, hp:90, sp:52,  dmg:14, fire:[2.0,3.2], score:250, color:'#c2a06b', dark:'#6e5634', scale:1.12, bspd:260, br:6 }
 };
-const WAVES = [
-  ['soldier','soldier','soldier'],
-  ['scout','scout','soldier','soldier'],
-  ['soldier','soldier','soldier','scout','scout'],
-  ['heavy','soldier','soldier','scout'],
-  ['heavy','heavy','scout','scout','scout']
-];
-const FINAL_WAVE = WAVES.length + 1;
+const TOTAL_WAVES = 100;
+const BOSS_EVERY = 10;              // каждая 10-я волна — босс, всего 10 боссов
+const BOSS_COUNT = TOTAL_WAVES / BOSS_EVERY;
+function isBossWave(n){ return n % BOSS_EVERY === 0; }
+function bossNumOf(n){ return n / BOSS_EVERY; }
+
+// Множители сложности для волны n (1..100)
+function diffFor(n){
+  return {
+    hp:    1 + (n-1)*0.02,                    // x3 к 100-й волне
+    dmg:   1 + (n-1)*0.015,                   // x2.5
+    sp:    1 + Math.min(0.5, (n-1)*0.005),    // до +50% скорости
+    fire:  Math.max(0.55, 1 - (n-1)*0.004),   // интервалы стрельбы сжимаются
+    bspd:  1 + Math.min(0.45, (n-1)*0.004),   // снаряды быстрее
+    score: 1 + (n-1)*0.02
+  };
+}
+
+// Состав обычной волны: число врагов и доля тяжёлых растут с номером
+function waveComposition(n){
+  const count = Math.min(12, 3 + Math.floor(n/8) + (n > 4 && Math.random() < 0.5 ? 1 : 0));
+  const heavyW = n < 4 ? 0 : Math.min(0.38, 0.08 + n*0.004);
+  const scoutW = n < 2 ? 0 : Math.min(0.4, 0.15 + n*0.003);
+  const list = [];
+  for(let i=0;i<count;i++){
+    const r = Math.random();
+    list.push(r < heavyW ? 'heavy' : r < heavyW + scoutW ? 'scout' : 'soldier');
+  }
+  return list;
+}
 
 // ---------- game state ----------
 const state = { mode:'menu', score:0, wave:1, shake:0, time:0 };
 const player = {
-  x:0, y:0, r:22, hp:100, maxHp:100, speed:215, hull:0, turret:0, cd:0,
+  x:0, y:0, r:22, hp:100, maxHp:100, dmg:15, speed:215, hull:0, turret:0, cd:0,
   blink:0, nextBlink:2, shieldT:0, rapidT:0, tripleT:0, trackT:0
 };
 let bullets = [], enemies = [], pickups = [], particles = [], tracks = [], floats = [];
@@ -250,46 +290,69 @@ function lerpAng(a,b,t){
   return a + d*t;
 }
 
-function spawnEnemy(type){
+function spawnEnemy(type, waveN){
   const T = ETYPES[type] || ETYPES.soldier;
+  const D = diffFor(waveN ?? state.wave);
   const side = Math.floor(rand(0,4));
   let x,y;
   if(side===0){ x = rand(40,W-40); y = -50; }
   else if(side===1){ x = W+50; y = rand(40,H-40); }
   else if(side===2){ x = rand(40,W-40); y = H+50; }
   else { x = -50; y = rand(40,H-40); }
+  const hp = Math.round(T.hp * D.hp);
   enemies.push({
-    type, x, y, r:T.r, hp:T.hp, maxHp:T.hp, hull:0, turret:0,
-    fireT: rand(T.fire[0], T.fire[1]), keep: rand(170,280), strafe: Math.random()<.5?1:-1,
+    type, x, y, r:T.r, hp, maxHp:hp,
+    sp: T.sp*D.sp, dmg: T.dmg*D.dmg, bspd: T.bspd*D.bspd, br: T.br,
+    fireMin: T.fire[0]*D.fire, fireMax: T.fire[1]*D.fire,
+    score: Math.round(T.score*D.score),
+    hull:0, turret:0,
+    fireT: rand(T.fire[0]*D.fire, T.fire[1]*D.fire), keep: rand(170,280), strafe: Math.random()<.5?1:-1,
     blink:0, nextBlink: rand(1,4), trackT:0
   });
 }
 
 function spawnBoss(){
+  const num = bossNumOf(state.wave);
+  const final = state.wave === TOTAL_WAVES;
+  const hp = 380 + 240*num + (final ? 400 : 0);
   boss = {
-    x: W+140, y: H/2, r:52, hp:400, maxHp:400,
+    num, final, x: W+140, y: H/2, r: final ? 62 : 52, hp, maxHp:hp,
+    dmg: 12 + num, bspd: 280 + num*8,
+    fireRate: Math.max(0.8, 1.35 - num*0.04),
     hull: Math.PI, turret: Math.PI, fireT:1.2, pattern:0, t:0,
     blink:0, nextBlink: rand(1,3), entering:true, enraged:false
   };
-  $('bosslabel').textContent = 'БОСС';
+  $('bosslabel').textContent = final ? 'ФИНАЛЬНЫЙ БОСС' : ('БОСС ' + num + ' / ' + BOSS_COUNT);
   $('bossbarwrap').hidden = false;
   minionTimer = 6;
 }
 
 function startWave(n){
   state.wave = n;
-  $('wavetext').textContent = n < FINAL_WAVE ? ('Волна ' + n + ' / ' + WAVES.length) : 'БОСС';
-  waveBanner = { text: n < FINAL_WAVE ? ('ВОЛНА ' + n) : 'БОСС!', t: 2.2 };
-  if(n < FINAL_WAVE){
-    WAVES[n-1].forEach((type,i)=> setTimeout(()=>{ if(state.mode==='play') spawnEnemy(type); }, i*420));
-  } else {
+  saveCheckpoint(n);
+  if(isBossWave(n)){
+    $('wavetext').textContent = 'Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС';
+    waveBanner = { text: n === TOTAL_WAVES ? 'ФИНАЛЬНЫЙ БОСС!' : ('БОСС ' + bossNumOf(n) + '!'), t: 2.2 };
     spawnBoss();
+  } else {
+    $('wavetext').textContent = 'Волна ' + n + ' / ' + TOTAL_WAVES;
+    waveBanner = { text: 'ВОЛНА ' + n, t: 2.2 };
+    waveComposition(n).forEach((type,i)=> setTimeout(()=>{ if(state.mode==='play') spawnEnemy(type, n); }, i*420));
   }
+}
+
+// Апгрейды за уже побеждённых боссов (детерминированно от номера волны)
+function applyProgress(wave){
+  const ups = Math.floor((wave-1) / BOSS_EVERY);
+  player.maxHp = 100 + ups*10;
+  player.dmg = 15 + ups*2;
 }
 
 function resetGame(wave, score, hp){
   bullets = []; enemies = []; pickups = []; particles = []; tracks = []; floats = []; boss = null;
-  player.x = W*0.5; player.y = H*0.65; player.hp = hp ?? player.maxHp;
+  applyProgress(wave ?? 1);
+  player.x = W*0.5; player.y = H*0.65;
+  player.hp = Math.min(player.maxHp, hp ?? player.maxHp);
   player.hull = -Math.PI/2; player.turret = -Math.PI/2; player.cd = 0;
   player.shieldT = 0; player.rapidT = 0; player.tripleT = 0;
   state.score = score ?? 0; state.shake = 0;
@@ -322,6 +385,23 @@ function resumeGame(){
   setOverlay(null);
 }
 
+function onBossKilled(){
+  const b = boss; boss = null;
+  explode(b.x, b.y, '#ff8577', 46); sfx.boom(); vibrate(300);
+  const sc = 500 + b.num*250;
+  state.score += sc;
+  addFloat(b.x, b.y, '+' + sc);
+  $('bossbarwrap').hidden = true;
+  if(state.wave >= TOTAL_WAVES){ endGame(true); return; }
+  // награда: +10 к макс. HP, +2 к урону, лечение
+  player.maxHp += 10; player.dmg += 2;
+  player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp*0.5));
+  addFloat(player.x, player.y - 44, '+10 HP · +2 УРОН', '#6fe58f');
+  waveBanner = { text: 'БОСС УНИЧТОЖЕН!', t: 1.6 };
+  sfx.win();
+  setTimeout(()=>{ if(state.mode==='play') startWave(state.wave+1); }, 1500);
+}
+
 function endGame(win){
   state.mode = win ? 'win' : 'lose';
   $('bossbarwrap').hidden = true;
@@ -334,8 +414,10 @@ function endGame(win){
     setOverlay('victory');
   } else {
     sfx.lose();
-    $('loseScore').textContent = 'Счёт: ' + state.score;
+    $('loseScore').textContent = 'Счёт: ' + state.score + ' · Волна ' + state.wave + ' / ' + TOTAL_WAVES;
     $('loseBest').textContent = rec;
+    $('retryBtn').textContent = checkpoint > 1 ? ('С ВОЛНЫ ' + checkpoint) : 'ЕЩЁ РАЗ';
+    $('retryStartBtn').hidden = checkpoint <= 1;
     setOverlay('gameover');
   }
 }
@@ -432,36 +514,36 @@ function playerShoot(){
   for(const off of offs){
     const a = player.turret + off;
     bullets.push({ x:player.x + Math.cos(a)*34, y:player.y + Math.sin(a)*34,
-                   vx:Math.cos(a)*560, vy:Math.sin(a)*560, from:'p', dmg:15, r:4 });
+                   vx:Math.cos(a)*560, vy:Math.sin(a)*560, from:'p', dmg:player.dmg, r:4 });
   }
   flash(player.x + Math.cos(player.turret)*38, player.y + Math.sin(player.turret)*38, player.turret);
   sfx.shot();
   state.shake = Math.min(state.shake + (REDUCED?0:2), 6);
 }
 function enemyShoot(e){
-  const T = ETYPES[e.type];
   const a = e.turret + rand(-0.08, 0.08);
   bullets.push({ x:e.x + Math.cos(a)*(e.r+12), y:e.y + Math.sin(a)*(e.r+12),
-                 vx:Math.cos(a)*T.bspd, vy:Math.sin(a)*T.bspd, from:'e', dmg:T.dmg, r:T.br });
+                 vx:Math.cos(a)*e.bspd, vy:Math.sin(a)*e.bspd, from:'e', dmg:e.dmg, r:e.br });
   flash(e.x + Math.cos(a)*(e.r+14), e.y + Math.sin(a)*(e.r+14), a);
   sfx.eshot();
 }
 function bossShoot(b){
   b.pattern = (b.pattern + 1) % 4;
   const base = angTo(b.x, b.y, player.x, player.y);
-  const fan = b.enraged ? [-0.4,-0.2,0,0.2,0.4] : [-0.22,0,0.22];
+  const spd = b.bspd * (b.enraged ? 1.15 : 1);
   if(b.pattern < 3){
-    for(const off of fan){
-      const a = base + off;
+    const c = b.enraged ? (b.final ? 7 : 5) : 3;
+    for(let i=0;i<c;i++){
+      const a = base + (i-(c-1)/2)*0.2;
       bullets.push({ x:b.x+Math.cos(a)*(b.r+14), y:b.y+Math.sin(a)*(b.r+14),
-                     vx:Math.cos(a)*(b.enraged?320:280), vy:Math.sin(a)*(b.enraged?320:280), from:'e', dmg:12, r:6 });
+                     vx:Math.cos(a)*spd, vy:Math.sin(a)*spd, from:'e', dmg:b.dmg, r:6 });
     }
   } else {
-    const n = b.enraged ? 14 : 10;
+    const n = (b.enraged ? 14 : 10) + (b.final ? 4 : 0);
     for(let i=0;i<n;i++){
       const a = base + i*(Math.PI*2/n);
       bullets.push({ x:b.x+Math.cos(a)*(b.r+14), y:b.y+Math.sin(a)*(b.r+14),
-                     vx:Math.cos(a)*230, vy:Math.sin(a)*230, from:'e', dmg:10, r:5 });
+                     vx:Math.cos(a)*(230 + b.num*6), vy:Math.sin(a)*(230 + b.num*6), from:'e', dmg:b.dmg-2, r:5 });
     }
   }
   flash(b.x + Math.cos(base)*(b.r+16), b.y + Math.sin(base)*(b.r+16), base);
@@ -565,10 +647,10 @@ function update(dt){
     const a = angTo(e.x,e.y,player.x,player.y);
     const d = dist(e.x,e.y,player.x,player.y);
     let vx = 0, vy = 0;
-    if(d > e.keep + 20){ vx = Math.cos(a)*T.sp; vy = Math.sin(a)*T.sp; }
-    else if(d < e.keep - 20){ vx = -Math.cos(a)*T.sp*0.8; vy = -Math.sin(a)*T.sp*0.8; }
-    vx += Math.cos(a + Math.PI/2) * T.sp*0.45 * e.strafe;
-    vy += Math.sin(a + Math.PI/2) * T.sp*0.45 * e.strafe;
+    if(d > e.keep + 20){ vx = Math.cos(a)*e.sp; vy = Math.sin(a)*e.sp; }
+    else if(d < e.keep - 20){ vx = -Math.cos(a)*e.sp*0.8; vy = -Math.sin(a)*e.sp*0.8; }
+    vx += Math.cos(a + Math.PI/2) * e.sp*0.45 * e.strafe;
+    vy += Math.sin(a + Math.PI/2) * e.sp*0.45 * e.strafe;
     e.x += vx*dt; e.y += vy*dt;
     if(e.x < e.r || e.x > W-e.r) e.strafe *= -1;
     if(e.y < e.r || e.y > H-e.r) e.strafe *= -1;
@@ -581,7 +663,7 @@ function update(dt){
     }
     e.turret = lerpAng(e.turret, a, Math.min(1, dt*5));
     e.fireT -= dt;
-    if(e.fireT <= 0 && d < 560){ enemyShoot(e); e.fireT = rand(T.fire[0], T.fire[1]); }
+    if(e.fireT <= 0 && d < 560){ enemyShoot(e); e.fireT = rand(e.fireMin, e.fireMax); }
     if(d < e.r + player.r + 2){ damagePlayer(12*dt); e.x -= Math.cos(a)*40*dt; e.y -= Math.sin(a)*40*dt; }
   }
 
@@ -598,9 +680,14 @@ function update(dt){
       boss.x = Math.max(W*0.4, Math.min(W-boss.r-10, boss.x));
       boss.y = Math.max(boss.r+30, Math.min(H-boss.r-30, boss.y));
       boss.fireT -= dt;
-      if(boss.fireT <= 0){ bossShoot(boss); boss.fireT = boss.enraged ? 0.9 : 1.35; }
+      if(boss.fireT <= 0){ bossShoot(boss); boss.fireT = boss.fireRate * (boss.enraged ? 0.66 : 1); }
       minionTimer -= dt;
-      if(minionTimer <= 0 && enemies.length < (boss.enraged ? 3 : 2)){ spawnEnemy('scout'); minionTimer = boss.enraged ? 7 : 9; }
+      if(minionTimer <= 0 && enemies.length < (boss.enraged ? 3 : 2)){
+        const mt = boss.num >= 7 ? (Math.random()<.5 ? 'soldier' : 'heavy')
+                 : boss.num >= 4 ? (Math.random()<.5 ? 'scout' : 'soldier') : 'scout';
+        spawnEnemy(mt);
+        minionTimer = boss.enraged ? 7 : 9;
+      }
     }
     if(!boss.enraged && boss.hp <= boss.maxHp/2){
       boss.enraged = true;
@@ -629,11 +716,11 @@ function update(dt){
           if(e.hp <= 0){
             const T = ETYPES[e.type];
             explode(e.x, e.y, T.color, 18); sfx.boom(); vibrate(40);
-            state.score += T.score;
-            addFloat(e.x, e.y, '+' + T.score);
+            state.score += e.score;
+            addFloat(e.x, e.y, '+' + e.score);
             dropPickup(e.x, e.y);
             enemies.splice(j,1);
-            if(state.wave < FINAL_WAVE && enemies.length === 0 && state.mode === 'play'){
+            if(!isBossWave(state.wave) && enemies.length === 0 && state.mode === 'play'){
               setTimeout(()=>{ if(state.mode==='play') startWave(state.wave+1); }, 900);
             }
           }
@@ -643,13 +730,7 @@ function update(dt){
       if(!consumed && boss && dist(b.x,b.y,boss.x,boss.y) < boss.r + b.r){
         boss.hp -= b.dmg; consumed = true;
         explode(b.x, b.y, '#f1c40f', 4); sfx.hit();
-        if(boss.hp <= 0){
-          explode(boss.x, boss.y, '#ff8577', 46); sfx.boom(); vibrate(300);
-          state.score += 1000;
-          addFloat(boss.x, boss.y, '+1000');
-          boss = null;
-          endGame(true);
-        }
+        if(boss.hp <= 0) onBossKilled();
       }
       if(consumed) bullets.splice(i,1);
     } else {
@@ -980,7 +1061,9 @@ function loop(now){
 
 // ---------- menus / boot ----------
 $('startBtn').addEventListener('click', ()=> startGame());
-$('retryBtn').addEventListener('click', ()=> startGame());
+$('contBtn').addEventListener('click', ()=> startGame(checkpoint));
+$('retryBtn').addEventListener('click', ()=> startGame(checkpoint > 1 ? checkpoint : 1));
+$('retryStartBtn').addEventListener('click', ()=> startGame());
 $('winBtn').addEventListener('click', ()=> startGame());
 $('resumeBtn').addEventListener('click', resumeGame);
 $('quitBtn').addEventListener('click', ()=>{
@@ -1002,6 +1085,8 @@ updateSoundBtn();
 function updateMenuBest(){
   $('menuBest').hidden = !(best > 0);
   $('menuBest').textContent = 'Рекорд: ' + best;
+  $('contBtn').hidden = checkpoint <= 1;
+  $('contBtn').textContent = 'С ВОЛНЫ ' + checkpoint;
 }
 
 if(IS_TOUCH){

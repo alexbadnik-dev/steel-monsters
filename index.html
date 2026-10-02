@@ -205,7 +205,7 @@ html{height:100%}
   <p>Бонусы можно прокачать в магазине: сильнее лечилка, дольше щит и скорострел, а тройной на максимуме превращается в ПЯТЬ стволов.</p>
   <p>Боссы — каждая 10-я волна, у каждого свой характер. За босса танк получает перки: здоровье, урон, перезарядку, а с третьего — регенерацию.</p>
   <p>Прошёл все 100 волн? После победы открывается бесконечное ВЫЖИВАНИЕ: тот же бой продолжается дальше, враги всё сильнее, рейтинг запомнит твою лучшую волну.</p>
-  <p>Сложность: на ХАРДЕ враги в 1.6 раза живучее и бьют в 1.5 раза больнее, зато монеты ×1.5 и каждый пройденный уровень даёт 2 🏆. КОШМАР (HP ×2.5, урон ×2.2, монеты ×2.5, кубки ×3) открывается после прохождения кампании.</p>
+  <p>Сложность: на ХАРДЕ враги в 1.35 раза живучее и бьют в 1.25 раза больнее, зато монеты ×1.5 и каждый пройденный уровень даёт 2 🏆. КОШМАР (HP ×1.8, урон ×1.6, монеты ×2.5, кубки ×3) открывается после прохождения кампании.</p>
   <p>Берегись: снайпер целится красным лазером, камикадзе взрывается при контакте, миномётчик и дроны бомбят по красным кругам — выезжай из них! Медик с крестом лечит своих — выбивай его первым.</p>
   <p>⚡ Супер-способность «Ударная волна» заряжается убийствами (жёлтая полоска под здоровьем): сметает все вражеские снаряды и бомбы и бьёт всех вокруг. Активация — <b>Q</b> на компьютере или жёлтая кнопка над огнём на телефоне.</p>
   <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины, классы танков и питомцев: Напарник стреляет по врагам, Ремонтник чинит твой танк.</p>
@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v27';
+const GAME_VERSION = 'v28';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -362,9 +362,9 @@ function playerClass(){ return CLASSES[profile.tank] || CLASSES.uni; }
 
 // ---------- сложность: враги сильнее — наград больше, кубки с множителем ----------
 const DIFFS = {
-  norm:  { name:'НОРМА',  hp:1,   dmg:1,   coins:1,   cups:1, drop:0.32 },
-  hard:  { name:'ХАРД',   hp:1.6, dmg:1.5, coins:1.5, cups:2, drop:0.26 },
-  night: { name:'КОШМАР', hp:2.5, dmg:2.2, coins:2.5, cups:3, drop:0.2 }
+  norm:  { name:'НОРМА',  hp:1,    dmg:1,    coins:1,   cups:1, drop:0.32 },
+  hard:  { name:'ХАРД',   hp:1.35, dmg:1.25, coins:1.5, cups:2, drop:0.27 },
+  night: { name:'КОШМАР', hp:1.8,  dmg:1.6,  coins:2.5, cups:3, drop:0.22 }
 };
 function currentDiff(){ return DIFFS[profile.diff] || DIFFS.norm; }
 // Кошмар открывается после прохождения кампании (волна 100+)
@@ -1053,8 +1053,8 @@ function startWave(n){
 function applyProgress(wave){
   const cls = playerClass();
   const ups = Math.floor((wave-1) / BOSS_EVERY);
-  player.maxHp = cls.hp + ups*10;
-  player.dmg = cls.dmg + ups*2;
+  player.maxHp = cls.hp + ups*12;
+  player.dmg = cls.dmg + ups*3;
   player.speed = cls.speed + ups*2;
   player.cdMult = Math.max(0.75, 1 - ups*0.03);
   player.regen = ups >= 3 ? 0.2*(ups-2) : 0;
@@ -1139,7 +1139,7 @@ function onBossKilled(){
   // награда: пересчитываем все перки на новый уровень и лечим
   applyProgress(state.wave + 1);
   player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp*0.5));
-  addFloat(player.x, player.y - 44, '+10 HP · +2 УРОН · −3% ПЕРЕЗАРЯДКА', '#6fe58f');
+  addFloat(player.x, player.y - 44, '+12 HP · +3 УРОН · −3% ПЕРЕЗАРЯДКА', '#6fe58f');
   if(b.num === 3) addFloat(player.x, player.y - 70, 'НОВЫЙ ПЕРК: РЕГЕНЕРАЦИЯ!', '#f1c40f');
   else if(b.num > 3) addFloat(player.x, player.y - 70, 'РЕГЕН +0.2/с · БОНУСЫ ДОЛЬШЕ', '#f1c40f');
   sfx.win();

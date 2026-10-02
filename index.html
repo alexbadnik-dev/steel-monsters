@@ -95,6 +95,7 @@ html{height:100%}
 .skbtn.owned{background:linear-gradient(180deg,#9db0bf,#5c7183);color:#101820}
 .skbtn.equipped{background:#2a3b31;color:var(--accent);cursor:default}
 .skbtn:disabled{opacity:.45;cursor:default}
+.ver{margin:0;font-size:11px;color:#5c6a76;letter-spacing:1px}
 @media (prefers-reduced-motion: reduce){ #hpbar{transition:none} }
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap">
@@ -149,6 +150,7 @@ html{height:100%}
     <button class="btn gray small" id="boardBtn">🏆 РЕЙТИНГ</button>
   </div>
   <p class="record" id="coinsText"></p>
+  <p class="ver" id="verText"></p>
 </div>
 
 <div class="overlay" id="shop" hidden>
@@ -194,6 +196,8 @@ html{height:100%}
 
 <script>
 'use strict';
+// Поднимать при каждом релизе вместе с CACHE в sw.js
+const GAME_VERSION = 'v8';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1642,6 +1646,7 @@ function updateMenuBest(){
   $('contBtn').textContent = 'С ВОЛНЫ ' + checkpoint;
   $('coinsText').textContent = '🪙 ' + profile.coins;
   $('nameInput').value = profile.name;
+  $('verText').textContent = 'Версия ' + GAME_VERSION;
 }
 
 if(IS_TOUCH){

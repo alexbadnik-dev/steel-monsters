@@ -251,7 +251,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v19';
+const GAME_VERSION = 'v20';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -422,7 +422,10 @@ let board = loadBoard();
 // (name text, score int8, wave int8, tank text, diff text, cups int8,
 //  created_at timestamptz default now()) с политиками RLS на anon insert/select,
 // и впишите сюда Project URL и anon-ключ. Вкладка «МИР» появится сама.
-const ONLINE = { url: '', key: '' };
+const ONLINE = {
+  url: 'https://rlgqylywmbkwaojsgsty.supabase.co',
+  key: 'sb_publishable_IA70_uF4A6_kAeb8epXERA_lDV9Co40'
+};
 function onlineEnabled(){ return !!(ONLINE.url && ONLINE.key); }
 async function submitOnline(e){
   if(!onlineEnabled()) return;

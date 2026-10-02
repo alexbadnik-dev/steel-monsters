@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v25';
+const GAME_VERSION = 'v26';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -556,14 +556,14 @@ const sfx = {
   // пушка игрока: у каждого класса свой характер
   cannon(k){
     if(k === 'heavy'){        // тяжёлое орудие: глухой мощный удар
-      beep(85, .22, 'sine', .15, -50);
-      noiseBurst(.18, .1, 'lowpass', 900, -700);
+      beep(85, .22, 'sine', .2, -50);
+      noiseBurst(.18, .14, 'lowpass', 900, -700);
     } else if(k === 'fast'){  // автопушка: лёгкий щелчок
-      beep(340, .06, 'square', .05, -220);
-      noiseBurst(.045, .045, 'highpass', 2600, 1200);
+      beep(340, .06, 'square', .08, -220);
+      noiseBurst(.045, .07, 'highpass', 2600, 1200);
     } else {                  // универсал: классический танковый выстрел
-      beep(140, .14, 'sine', .11, -90);
-      noiseBurst(.1, .07, 'lowpass', 1400, -1000);
+      beep(140, .14, 'sine', .16, -90);
+      noiseBurst(.1, .11, 'lowpass', 1400, -1000);
     }
   },
   shot(){ sfx.cannon('uni'); },
@@ -598,9 +598,9 @@ const sfx = {
   },
   hit(){ beep(180, .12, 'triangle', .09, -120); },
   boom(){
-    beep(90, .5, 'sawtooth', .12, -60);
-    beep(55, .6, 'triangle', .1, -25);
-    noiseBurst(.28, .07, 'lowpass', 1300, -1100);
+    beep(90, .45, 'sawtooth', .09, -60);
+    beep(55, .55, 'triangle', .07, -25);
+    noiseBurst(.26, .05, 'lowpass', 1300, -1100);
   },
   pickup(){ beep(520, .09, 'sine', .08, 260); beep(780, .12, 'sine', .07, 200); },
   shieldPop(){ beep(900, .15, 'sine', .07, -500); },
@@ -1034,8 +1034,15 @@ function startWave(n){
     waveBanner = n % 10 === 1
       ? { text: (n === TOTAL_WAVES + 1 ? 'ВЫЖИВАНИЕ! · ' : 'ВОЛНА ' + n + ' · ') + biomeFor(n).name, t: 2.6 }
       : { text: 'ВОЛНА ' + n, t: 2.2 };
-    waveComposition(n).forEach((type,i)=> setTimeout(()=>{ if(state.mode==='play') spawnEnemy(type, n); }, i*420));
-    const dn = waveDroneCount(n);
+    let comp = waveComposition(n);
+    let dn = waveDroneCount(n);
+    // разгонная волна после старта с чекпоинта: на треть меньше врагов и без дронов
+    if(state.warmup){
+      state.warmup = false;
+      comp = comp.slice(0, Math.max(3, Math.ceil(comp.length * 0.65)));
+      dn = 0;
+    }
+    comp.forEach((type,i)=> setTimeout(()=>{ if(state.mode==='play') spawnEnemy(type, n); }, i*420));
     for(let i=0;i<dn;i++) setTimeout(()=>{ if(state.mode==='play' && state.wave===n) spawnDrone(); }, 800 + i*900);
   }
 }
@@ -1062,10 +1069,15 @@ function resetGame(wave, score, hp){
   player.hp = Math.min(player.maxHp, hp ?? player.maxHp);
   player.hull = -Math.PI/2; player.turret = -Math.PI/2; player.cd = 0;
   player.shieldT = 0; player.rapidT = 0; player.tripleT = 0; player.superCharge = 0;
-  // старт с чекпоинта — боевой комплект: щит на 5с и полшкалы супера
+  state.warmup = false;
+  // старт с чекпоинта — боевой комплект: щит, почти полный супер,
+  // бонусы под рукой и облегчённая первая волна
   if((wave ?? 1) > 1){
-    player.shieldT = 5;
-    player.superCharge = 0.5;
+    player.shieldT = 6;
+    player.superCharge = 0.75;
+    state.warmup = true;
+    pickups.push({ x: player.x - 70, y: player.y - 60, type:'med', t:0 });
+    pickups.push({ x: player.x + 70, y: player.y - 60, type: Math.random() < 0.5 ? 'triple' : 'rapid', t:0 });
   }
   pet.x = player.x - 50; pet.y = player.y; pet.cd = 0; pet.t = 0;
   state.score = score ?? 0; state.shake = 0; state.freezeT = 0; state.magnetT = 0; state.awardedFor = 0;

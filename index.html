@@ -226,7 +226,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v12';
+const GAME_VERSION = 'v13';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1056,8 +1056,17 @@ function update(dt){
   if(IS_TOUCH && !mouse.used){
     let best2 = null, bd = Infinity;
     for(const e of enemies){ const d = dist(player.x,player.y,e.x,e.y); if(d<bd){ bd=d; best2=e; } }
+    for(const dr of drones){ const d = dist(player.x,player.y,dr.x,dr.y); if(d<bd){ bd=d; best2=dr; } }
     if(boss){ const d = dist(player.x,player.y,boss.x,boss.y); if(d<bd){ bd=d; best2=boss; } }
-    if(best2) aimA = angTo(player.x,player.y,best2.x,best2.y);
+    if(best2){
+      // упреждение по быстрым целям (дроны): целимся туда, где цель будет к прилёту пули
+      let tx = best2.x, ty = best2.y;
+      if(best2.vx !== undefined){
+        const ft = bd / 560;
+        tx += best2.vx * ft; ty += best2.vy * ft;
+      }
+      aimA = angTo(player.x, player.y, tx, ty);
+    }
   } else {
     aimA = angTo(player.x,player.y,mouse.x,mouse.y);
   }
@@ -1255,8 +1264,9 @@ function update(dt){
     const orbit = Math.sin(d.t*1.6);
     const ma = dd < 150 ? a + Math.PI/2*Math.sign(orbit || 1) : a + orbit*0.5;
     d.a = lerpAng(d.a, ma, Math.min(1, dt*3.5));
-    d.x += Math.cos(d.a)*165*dt;
-    d.y += Math.sin(d.a)*165*dt;
+    d.vx = Math.cos(d.a)*165; d.vy = Math.sin(d.a)*165; // для упреждения автоприцела
+    d.x += d.vx*dt;
+    d.y += d.vy*dt;
     d.x = Math.max(20, Math.min(W-20, d.x));
     d.y = Math.max(20, Math.min(H-20, d.y));
     d.dropT -= dt;

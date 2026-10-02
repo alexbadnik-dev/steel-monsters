@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v28';
+const GAME_VERSION = 'v29';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1331,6 +1331,12 @@ function leaveTrack(t, scale){
     particles.push({ x:t.x+rand(-10,10), y:t.y+rand(-10,10), vx:rand(-9,9), vy:rand(-9,9),
                      life:rand(.4,.8), t:0, r:rand(2,4), grow:12, color:'rgba(92,102,116,0.5)' });
   }
+  // выхлоп из кормы
+  if(Math.random() < 0.45){
+    particles.push({ x:t.x - Math.cos(t.hull)*26*scale, y:t.y - Math.sin(t.hull)*26*scale,
+                     vx:-Math.cos(t.hull)*18 + rand(-6,6), vy:-Math.sin(t.hull)*18 - 10,
+                     life:rand(.35,.6), t:0, r:rand(2,3.2), grow:10, color:'rgba(58,66,78,0.55)' });
+  }
 }
 
 // ---------- shooting ----------
@@ -1352,6 +1358,7 @@ function playerShoot(){
                      vx:Math.cos(ca)*rand(70,130), vy:Math.sin(ca)*rand(70,130) - 40,
                      life:0.45, t:0, r:2, color:'#e8c25a' });
   }
+  player.recoil = 1; // откат ствола
   sfx.cannon(profile.tank); // у каждого класса свой голос пушки
   state.shake = Math.min(state.shake + (REDUCED?0:2), 6);
 }
@@ -1361,6 +1368,7 @@ function enemyShoot(e){
   bullets.push({ x:e.x + Math.cos(a)*(e.r+12), y:e.y + Math.sin(a)*(e.r+12),
                  vx:Math.cos(a)*e.bspd, vy:Math.sin(a)*e.bspd, from:'e', dmg:e.dmg, r:e.br });
   flash(e.x + Math.cos(a)*(e.r+14), e.y + Math.sin(a)*(e.r+14), a);
+  e.recoil = 1;
   sfx.eshot(e.type);
 }
 function bossShoot(b){
@@ -1385,6 +1393,7 @@ function bossShoot(b){
     }
   }
   flash(b.x + Math.cos(base)*(b.r+16), b.y + Math.sin(base)*(b.r+16), base);
+  b.recoil = 1;
   sfx.eshot('boss');
 }
 
@@ -1518,6 +1527,7 @@ function update(dt){
     player.x += nx * player.speed * dt;
     player.y += ny * player.speed * dt;
     player.hull = lerpAng(player.hull, Math.atan2(ny,nx), Math.min(1, dt*10));
+    player.trackPhase = (player.trackPhase || 0) + player.speed*dt*0.22;
     player.trackT -= dt;
     if(player.trackT <= 0){ leaveTrack(player, 1); player.trackT = 0.07; }
   }
@@ -1587,10 +1597,24 @@ function update(dt){
       }
     } else if(profile.pet === 'heal'){
       if(pet.cd <= 0){
-        pet.cd = 1;
+        pet.cd = 0.5;
         if(player.hp < player.maxHp){
-          player.hp = Math.min(player.maxHp, player.hp + 2);
-          if(!REDUCED) particles.push({ x:player.x+rand(-10,10), y:player.y-20, vx:0, vy:-26, life:0.6, t:0, r:2.5, color:'#6fe58f' });
+          player.hp = Math.min(player.maxHp, player.hp + 1); // те же 2 HP/с, но тики чаще
+          if(!REDUCED){
+            // сварка: точка на броне между дроном и танком
+            const wa = angTo(pet.x, pet.y, player.x, player.y);
+            const wx = player.x - Math.cos(wa)*18, wy = player.y - Math.sin(wa)*18;
+            // вспышка дуги (бело-голубая)
+            particles.push({ x:wx, y:wy, vx:0, vy:0, life:0.09, t:0, r:rand(2.5,4), color:'#dff3ff' });
+            particles.push({ x:wx, y:wy, vx:0, vy:0, life:0.14, t:0, r:1.8, color:'#8fd0ff' });
+            // сноп искр, падающих по дуге
+            for(let i=0;i<4;i++){
+              const sa = wa + Math.PI + rand(-0.9, 0.9);
+              particles.push({ x:wx, y:wy, vx:Math.cos(sa)*rand(40,110), vy:Math.sin(sa)*rand(40,110) - 50,
+                               g:480, life:rand(.25,.5), t:0, r:rand(1,1.6),
+                               color: Math.random() < 0.7 ? '#ffd84d' : '#ff9f43' });
+            }
+          }
         }
       }
     }
@@ -1601,6 +1625,7 @@ function update(dt){
     t.nextBlink -= dt;
     if(t.nextBlink <= 0){ t.blink = 0.12; t.nextBlink = rand(1.6, 4.5); }
     if(t.blink > 0) t.blink -= dt;
+    if(t.recoil) t.recoil = Math.max(0, t.recoil - dt*6); // ствол возвращается
     if(!REDUCED && t.maxHp && t.hp / t.maxHp < 0.35){
       t.smokeT = (t.smokeT || 0) - dt;
       if(t.smokeT <= 0){ smokePuff(t); t.smokeT = 0.16; }
@@ -1624,6 +1649,7 @@ function update(dt){
       e.x += Math.cos(a)*e.sp*dt; e.y += Math.sin(a)*e.sp*dt;
       e.hull = lerpAng(e.hull, a, Math.min(1, dt*8));
       e.turret = e.hull;
+      e.trackPhase = (e.trackPhase || 0) + e.sp*dt*0.22;
       e.trackT -= dt;
       if(e.trackT <= 0){ leaveTrack(e, T.scale); e.trackT = 0.07; }
       if(d < e.r + player.r + 2){
@@ -1648,7 +1674,10 @@ function update(dt){
       if(ally){
         const aa = angTo(e.x,e.y,ally.x,ally.y);
         const ad = dist(e.x,e.y,ally.x,ally.y);
-        if(ad > 70){ e.x += Math.cos(aa)*e.sp*dt; e.y += Math.sin(aa)*e.sp*dt; }
+        if(ad > 70){
+          e.x += Math.cos(aa)*e.sp*dt; e.y += Math.sin(aa)*e.sp*dt;
+          e.trackPhase = (e.trackPhase || 0) + e.sp*dt*0.22;
+        }
         e.hull = lerpAng(e.hull, aa, Math.min(1, dt*6));
         e.turret = e.hull;
         e.trackT -= dt;
@@ -1683,6 +1712,7 @@ function update(dt){
     e.y = Math.max(e.r, Math.min(H-e.r, e.y));
     if(Math.hypot(vx,vy) > 5){
       e.hull = lerpAng(e.hull, Math.atan2(vy,vx), Math.min(1, dt*6));
+      e.trackPhase = (e.trackPhase || 0) + Math.hypot(vx,vy)*dt*0.22;
       e.trackT -= dt;
       if(e.trackT <= 0){ leaveTrack(e, T.scale); e.trackT = 0.1; }
     }
@@ -1771,6 +1801,7 @@ function update(dt){
     }
     boss.turret = lerpAng(boss.turret, angTo(boss.x,boss.y,player.x,player.y), Math.min(1, dt*3.5));
     boss.hull = boss.turret;
+    boss.trackPhase = (boss.trackPhase || 0) + (boss.dashing > 0 ? 70 : 16)*dt;
     $('bossbar').style.width = Math.max(0, boss.hp/boss.maxHp*100) + '%';
   }
 
@@ -1959,10 +1990,14 @@ function drawTank(t, opts, c){
     c.fillStyle = darkC;
     rrectC(c, -24*s, -20*s, 48*s, 9*s, 4*s); c.fill();
     rrectC(c, -24*s, 11*s, 48*s, 9*s, 4*s); c.fill();
+    // бегущие траки: сегменты сдвигаются по пройденному пути
     c.fillStyle = '#00000033';
-    for(let i=-3;i<=3;i++){
-      c.fillRect((i*7-1.6)*s, -19*s, 3.2*s, 7*s);
-      c.fillRect((i*7-1.6)*s, 12*s, 3.2*s, 7*s);
+    const tph = ((t.trackPhase || 0) % 7 + 7) % 7;
+    for(let i=0;i<7;i++){
+      const xx = -24 + ((i*7 + tph) % 49);
+      if(xx > 20.4) continue;
+      c.fillRect(xx*s, -19*s, 3.2*s, 7*s);
+      c.fillRect(xx*s, 12*s, 3.2*s, 7*s);
     }
     if(fx.body === 'stealth'){
       // гранёный корпус
@@ -2090,6 +2125,9 @@ function drawTank(t, opts, c){
   // turret
   c.save();
   c.rotate(t.turret);
+  // откат ствола при выстреле
+  const rc = -(t.recoil || 0) * 4 * s;
+  c.translate(rc, 0);
   c.fillStyle = darkC;
   if(fx.barrel === 'double'){
     rrectC(c, 10*s, -8.5*s, 24*s, 6*s, 2.5*s); c.fill();

@@ -47,7 +47,11 @@ html{height:100%}
 #bossbarwrap .label{text-align:center;font-size:12px;letter-spacing:2px;color:#ffb3aa;text-shadow:0 2px 3px #000a;margin-bottom:4px}
 .bosswrap{height:14px;background:#0008;border:2px solid #0006;border-radius:8px;overflow:hidden}
 #bossbar{height:100%;width:100%;background:linear-gradient(180deg,#ff8577,#c0392b)}
-.overlay{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(ellipse at center,#1c232bd9 0%,#10141af2 100%);text-align:center;padding:24px 16px}
+.overlay{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;gap:12px;background:radial-gradient(ellipse at center,#1c232bd9 0%,#10141af2 100%);text-align:center;
+  padding:calc(env(safe-area-inset-top,0px) + 18px) 16px calc(env(safe-area-inset-bottom,0px) + 18px);overflow-y:auto}
+/* безопасное центрирование: когда контент не влезает, работает прокрутка вместо обрезки */
+.overlay > :first-child{margin-top:auto}
+.overlay > :last-child{margin-bottom:auto}
 .overlay h1{margin:0;font-size:clamp(28px,7.5vw,58px);letter-spacing:2px;color:var(--accent);text-shadow:0 4px 0 #1c5c33,0 8px 24px #000}
 .overlay h1.red{color:var(--danger);text-shadow:0 4px 0 #6e1810,0 8px 24px #000}
 .overlay h1.gold{color:var(--gold);text-shadow:0 4px 0 #7a6207,0 8px 24px #000}
@@ -84,7 +88,7 @@ html{height:100%}
 .boardrow .sc{color:var(--ink);flex:none;min-width:54px;text-align:right}
 .shopgrid{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:580px;max-height:50vh;overflow:auto;pointer-events:auto;padding:4px}
 .skincard{width:120px;background:#ffffff0d;border-radius:12px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px}
-.skincard .prev{width:54px;height:54px;border-radius:12px;position:relative;border:2px solid #0006}
+.skincard .prev{width:76px;height:76px}
 .skincard .nm{font-size:13px}
 .skbtn{pointer-events:auto;cursor:pointer;border:0;border-radius:8px;font-family:inherit;font-size:13px;padding:7px 12px;
   background:linear-gradient(180deg,#6fe58f,#2e9c4f);color:#0c2414;width:100%}
@@ -235,15 +239,24 @@ function saveBest(v){ try{ localStorage.setItem('sm_best', String(v)); }catch(e)
 let best = loadBest();
 
 // ---------- профиль: имя, монеты, скины ----------
+// Скин = цвета + fx (узор, корпус, башня, ствол, свечение...), меняющие облик танка
 const SKINS = [
-  { id:'green',  name:'Зелёный',    cost:0,    hull:'#58d97b', dark:'#1f7a40' },
-  { id:'blue',   name:'Синий',      cost:200,  hull:'#6db3f2', dark:'#2d5f8a' },
-  { id:'desert', name:'Пустынный',  cost:200,  hull:'#d8c27a', dark:'#7a6a3a' },
-  { id:'pink',   name:'Розовый',    cost:300,  hull:'#f78fb3', dark:'#8f3a5e' },
-  { id:'violet', name:'Фиолетовый', cost:400,  hull:'#a29bfe', dark:'#5546c8' },
-  { id:'orange', name:'Оранжевый',  cost:400,  hull:'#ffa94d', dark:'#9c5a14' },
-  { id:'ghost',  name:'Призрак',    cost:800,  hull:'#e8eef2', dark:'#7d8a94' },
-  { id:'gold',   name:'Золотой',    cost:1500, hull:'#f6d32d', dark:'#8a6d08' }
+  { id:'green',   name:'Классик',    cost:0,    hull:'#58d97b', dark:'#1f7a40' },
+  { id:'blue',    name:'Синий',      cost:150,  hull:'#6db3f2', dark:'#2d5f8a' },
+  { id:'desert',  name:'Пустынный',  cost:150,  hull:'#d8c27a', dark:'#7a6a3a' },
+  { id:'pink',    name:'Розовый',    cost:200,  hull:'#f78fb3', dark:'#8f3a5e' },
+  { id:'violet',  name:'Фиолетовый', cost:250,  hull:'#a29bfe', dark:'#5546c8' },
+  { id:'orange',  name:'Оранжевый',  cost:250,  hull:'#ffa94d', dark:'#9c5a14' },
+  { id:'camo',    name:'Камуфляж',   cost:300,  hull:'#6e8a52', dark:'#33461f', fx:{ pattern:'camo' } },
+  { id:'melon',   name:'Арбуз',      cost:350,  hull:'#4ec46a', dark:'#1f7a40', fx:{ pattern:'melon', turretColor:'#ff6b6b' } },
+  { id:'tiger',   name:'Тигр',       cost:500,  hull:'#d8b267', dark:'#6e5634', fx:{ pattern:'stripes', barrel:'heavy' } },
+  { id:'double',  name:'Двустволка', cost:600,  hull:'#8fa6b8', dark:'#4e6274', fx:{ barrel:'double' } },
+  { id:'stealth', name:'Стелс',      cost:700,  hull:'#3c4650', dark:'#161b20', fx:{ body:'stealth', eyeColor:'#6fd9e8' } },
+  { id:'robot',   name:'Робот',      cost:800,  hull:'#9db0bf', dark:'#5c7183', fx:{ turret:'box', antenna:true, eyeColor:'#ffd84d' } },
+  { id:'ghost',   name:'Призрак',    cost:900,  hull:'#e8eef2', dark:'#7d8a94', fx:{ alpha:0.55 } },
+  { id:'lava',    name:'Лава',       cost:1000, hull:'#5a2c20', dark:'#2b1410', fx:{ pattern:'cracks', glow:'#ff6a3a' } },
+  { id:'ufo',     name:'НЛО',        cost:1200, hull:'#7ee0d2', dark:'#2d7a6e', fx:{ body:'hover', glow:'#7ee0d2' } },
+  { id:'gold',    name:'Золотой',    cost:1500, hull:'#f6d32d', dark:'#8a6d08', fx:{ sparkle:true } }
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
 function loadProfile(){
@@ -371,7 +384,7 @@ function waveComposition(n){
   const count = Math.min(12, 3 + Math.floor(n/8) + (n > 4 && Math.random() < 0.5 ? 1 : 0));
   const heavyW = n < 4  ? 0 : Math.min(0.3,  0.08 + n*0.003);
   const kamW   = n < 6  ? 0 : Math.min(0.2,  0.05 + n*0.0025);
-  const snipW  = n < 12 ? 0 : Math.min(0.16, 0.04 + n*0.0018);
+  const snipW  = n < 8 ? 0 : Math.min(0.18, 0.05 + n*0.002);
   const scoutW = n < 2  ? 0 : Math.min(0.28, 0.15 + n*0.002);
   const list = [];
   for(let i=0;i<count;i++){
@@ -953,83 +966,202 @@ function update(dt){
 }
 
 // ---------- drawing ----------
-function rrect(x,y,w,h,r){
-  ctx.beginPath();
-  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
-  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+function rrectC(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath();
 }
+function rrect(x,y,w,h,r){ rrectC(ctx,x,y,w,h,r); }
 
-function drawTank(t, opts){
+// t: {x,y,hull,turret,blink}; opts.fx — облик скина; c — целевой canvas (по умолчанию игровой)
+function drawTank(t, opts, c){
+  c = c || ctx;
   const s = opts.scale || 1;
-  ctx.save();
-  ctx.translate(t.x, t.y);
+  const fx = opts.fx || {};
+  const baseA = fx.alpha || 1;
+  c.save();
+  c.translate(t.x, t.y);
+  c.globalAlpha = baseA;
 
   // drop shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  ctx.beginPath(); ctx.ellipse(4*s, 6*s, 27*s, 23*s, 0, 0, Math.PI*2); ctx.fill();
+  c.fillStyle = 'rgba(0,0,0,0.28)';
+  c.beginPath(); c.ellipse(4*s, 6*s, 27*s, 23*s, 0, 0, Math.PI*2); c.fill();
+
+  // свечение (лава, НЛО)
+  if(fx.glow){
+    c.strokeStyle = fx.glow;
+    c.globalAlpha = baseA * (0.35 + 0.2*Math.sin(state.time*6));
+    c.lineWidth = 4;
+    c.beginPath(); c.arc(0, 0, 30*s, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = baseA;
+  }
 
   // hull
-  ctx.save();
-  ctx.rotate(t.hull);
-  ctx.fillStyle = opts.darkColor;
-  rrect(-24*s, -20*s, 48*s, 9*s, 4*s); ctx.fill();
-  rrect(-24*s, 11*s, 48*s, 9*s, 4*s); ctx.fill();
-  ctx.fillStyle = '#00000033';
-  for(let i=-3;i<=3;i++){
-    ctx.fillRect((i*7-1.6)*s, -19*s, 3.2*s, 7*s);
-    ctx.fillRect((i*7-1.6)*s, 12*s, 3.2*s, 7*s);
+  c.save();
+  c.rotate(t.hull);
+  if(fx.body === 'hover'){
+    // летающая платформа без гусениц
+    c.fillStyle = opts.darkColor;
+    c.beginPath(); c.ellipse(0, 0, 25*s, 20*s, 0, 0, Math.PI*2); c.fill();
+    c.fillStyle = opts.hullColor;
+    c.beginPath(); c.ellipse(0, 0, 21*s, 16*s, 0, 0, Math.PI*2); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
+    c.beginPath(); c.ellipse(0, 0, 21*s, 16*s, 0, 0, Math.PI*2); c.stroke();
+    c.fillStyle = '#ffffff22';
+    c.beginPath(); c.ellipse(-3*s, -5*s, 13*s, 7*s, 0, 0, Math.PI*2); c.fill();
+  } else {
+    c.fillStyle = opts.darkColor;
+    rrectC(c, -24*s, -20*s, 48*s, 9*s, 4*s); c.fill();
+    rrectC(c, -24*s, 11*s, 48*s, 9*s, 4*s); c.fill();
+    c.fillStyle = '#00000033';
+    for(let i=-3;i<=3;i++){
+      c.fillRect((i*7-1.6)*s, -19*s, 3.2*s, 7*s);
+      c.fillRect((i*7-1.6)*s, 12*s, 3.2*s, 7*s);
+    }
+    if(fx.body === 'stealth'){
+      // гранёный корпус
+      c.fillStyle = opts.hullColor;
+      c.beginPath();
+      c.moveTo(-21*s,-9*s); c.lineTo(-8*s,-14*s); c.lineTo(15*s,-12*s); c.lineTo(23*s,0);
+      c.lineTo(15*s,12*s); c.lineTo(-8*s,14*s); c.lineTo(-21*s,9*s); c.closePath();
+      c.fill();
+      c.strokeStyle = 'rgba(0,0,0,0.4)'; c.lineWidth = Math.max(1.5, 2*s); c.stroke();
+      c.fillStyle = '#ffffff14';
+      c.beginPath();
+      c.moveTo(-21*s,-9*s); c.lineTo(-8*s,-14*s); c.lineTo(15*s,-12*s); c.lineTo(23*s,0); c.lineTo(-21*s,0); c.closePath();
+      c.fill();
+    } else {
+      c.fillStyle = opts.hullColor;
+      rrectC(c, -21*s, -13*s, 42*s, 26*s, 6*s); c.fill();
+      c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
+      rrectC(c, -21*s, -13*s, 42*s, 26*s, 6*s); c.stroke();
+    }
+    // узор на корпусе
+    if(fx.pattern){
+      c.save();
+      rrectC(c, -21*s, -13*s, 42*s, 26*s, 6*s); c.clip();
+      if(fx.pattern === 'camo'){
+        c.fillStyle = 'rgba(0,0,0,0.32)';
+        for(const [px,py,pr,pa] of [[-12,-5,7,0.6],[2,6,8,1.8],[12,-6,6,0.2],[-2,-11,5,1.1],[17,8,5,2.5]]){
+          c.beginPath(); c.ellipse(px*s, py*s, pr*s, pr*0.65*s, pa, 0, Math.PI*2); c.fill();
+        }
+      } else if(fx.pattern === 'stripes'){
+        c.strokeStyle = 'rgba(30,20,5,0.5)'; c.lineWidth = 4.5*s; c.lineCap = 'round';
+        for(const px of [-15,-6,3,12]){
+          c.beginPath(); c.moveTo(px*s, -14*s); c.lineTo((px+7)*s, 14*s); c.stroke();
+        }
+      } else if(fx.pattern === 'melon'){
+        c.strokeStyle = 'rgba(16,80,38,0.65)'; c.lineWidth = 4.5*s; c.lineCap = 'round';
+        for(const py of [-9,-3,3,9]){
+          c.beginPath(); c.moveTo(-21*s, py*s); c.lineTo(21*s, py*s); c.stroke();
+        }
+      } else if(fx.pattern === 'cracks'){
+        c.strokeStyle = fx.glow || '#ff6a3a'; c.lineWidth = 2*s; c.lineCap = 'round';
+        c.globalAlpha = baseA * (0.65 + 0.35*Math.sin(state.time*5));
+        c.beginPath(); c.moveTo(-16*s,-6*s); c.lineTo(-6*s,-2*s); c.lineTo(-10*s,6*s); c.stroke();
+        c.beginPath(); c.moveTo(2*s,-10*s); c.lineTo(8*s,-2*s); c.lineTo(4*s,4*s); c.lineTo(12*s,10*s); c.stroke();
+        c.globalAlpha = baseA;
+      }
+      c.restore();
+    }
+    if(fx.body !== 'stealth'){
+      c.fillStyle = '#ffffff1f';
+      rrectC(c, -21*s, -13*s, 42*s, 9*s, 6*s); c.fill();
+    }
   }
-  ctx.fillStyle = opts.hullColor;
-  rrect(-21*s, -13*s, 42*s, 26*s, 6*s); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = Math.max(1.5, 2*s);
-  rrect(-21*s, -13*s, 42*s, 26*s, 6*s); ctx.stroke();
-  ctx.fillStyle = '#ffffff1f';
-  rrect(-21*s, -13*s, 42*s, 9*s, 6*s); ctx.fill();
-  ctx.restore();
+  c.restore();
 
   // turret
-  ctx.save();
-  ctx.rotate(t.turret);
-  ctx.fillStyle = opts.darkColor;
-  rrect(10*s, -4*s, 26*s, 8*s, 3*s); ctx.fill();
-  ctx.fillStyle = '#00000055';
-  ctx.fillRect(32*s, -4*s, 4*s, 8*s);
-  ctx.fillStyle = opts.hullColor;
-  ctx.beginPath(); ctx.arc(0, 0, 13*s, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = Math.max(1.5, 2*s);
-  ctx.beginPath(); ctx.arc(0, 0, 13*s, 0, Math.PI*2); ctx.stroke();
-  ctx.fillStyle = '#ffffff22';
-  ctx.beginPath(); ctx.arc(-2*s, -3*s, 9*s, 0, Math.PI*2); ctx.fill();
+  c.save();
+  c.rotate(t.turret);
+  c.fillStyle = opts.darkColor;
+  if(fx.barrel === 'double'){
+    rrectC(c, 10*s, -8.5*s, 24*s, 6*s, 2.5*s); c.fill();
+    rrectC(c, 10*s, 2.5*s, 24*s, 6*s, 2.5*s); c.fill();
+    c.fillStyle = '#00000055';
+    c.fillRect(30*s, -8.5*s, 4*s, 6*s);
+    c.fillRect(30*s, 2.5*s, 4*s, 6*s);
+  } else if(fx.barrel === 'heavy'){
+    rrectC(c, 10*s, -5*s, 31*s, 10*s, 3*s); c.fill();
+    c.fillStyle = '#00000055';
+    c.fillRect(34*s, -6.5*s, 6*s, 13*s);
+  } else {
+    rrectC(c, 10*s, -4*s, 26*s, 8*s, 3*s); c.fill();
+    c.fillStyle = '#00000055';
+    c.fillRect(32*s, -4*s, 4*s, 8*s);
+  }
+  const tc = fx.turretColor || opts.hullColor;
+  if(fx.turret === 'box'){
+    c.fillStyle = tc;
+    rrectC(c, -11*s, -11*s, 22*s, 22*s, 4*s); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
+    rrectC(c, -11*s, -11*s, 22*s, 22*s, 4*s); c.stroke();
+    c.fillStyle = '#ffffff22';
+    rrectC(c, -11*s, -11*s, 22*s, 9*s, 4*s); c.fill();
+  } else {
+    c.fillStyle = tc;
+    c.beginPath(); c.arc(0, 0, 13*s, 0, Math.PI*2); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
+    c.beginPath(); c.arc(0, 0, 13*s, 0, Math.PI*2); c.stroke();
+    c.fillStyle = '#ffffff22';
+    c.beginPath(); c.arc(-2*s, -3*s, 9*s, 0, Math.PI*2); c.fill();
+  }
+  if(fx.pattern === 'melon'){
+    c.fillStyle = '#2a1a1a';
+    for(const [sx,sy] of [[-8,-5],[-4,1],[-8,5],[-3,-9]]){
+      c.beginPath(); c.ellipse(sx*s, sy*s, 1.5*s, 2.3*s, 0.5, 0, Math.PI*2); c.fill();
+    }
+  }
+  if(fx.antenna){
+    c.strokeStyle = opts.darkColor; c.lineWidth = 2*s; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-8*s, -8*s); c.lineTo(-14*s, -16*s); c.stroke();
+    c.fillStyle = '#ff5540';
+    c.beginPath(); c.arc(-14*s, -16*s, 2.5*s, 0, Math.PI*2); c.fill();
+  }
 
   // Gerand eyes
   const blink = (opts.blink && opts.blink > 0);
   const eyeH = blink ? 1.6 : 9;
-  ctx.fillStyle = '#fff';
-  rrect(1*s, -9*s, 7.5*s, eyeH*s, 2.4*s); ctx.fill();
-  rrect(1*s, (blink? 2.5 : 0.5)*s, 7.5*s, eyeH*s, 2.4*s); ctx.fill();
+  c.fillStyle = fx.eyeColor || '#fff';
+  rrectC(c, 1*s, -9*s, 7.5*s, eyeH*s, 2.4*s); c.fill();
+  rrectC(c, 1*s, (blink? 2.5 : 0.5)*s, 7.5*s, eyeH*s, 2.4*s); c.fill();
   if(!blink){
-    ctx.fillStyle = '#14181c';
-    ctx.beginPath(); ctx.arc(6.1*s, -4.4*s, 2.1*s, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(6.1*s, 5.1*s, 2.1*s, 0, Math.PI*2); ctx.fill();
+    c.fillStyle = '#14181c';
+    c.beginPath(); c.arc(6.1*s, -4.4*s, 2.1*s, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(6.1*s, 5.1*s, 2.1*s, 0, Math.PI*2); c.fill();
     if(opts.angry){
-      ctx.strokeStyle = opts.rage ? '#ff5540' : opts.darkColor;
-      ctx.lineWidth = 3*s; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(0.2*s, -10*s); ctx.lineTo(9*s, -6.5*s); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0.2*s, 10*s); ctx.lineTo(9*s, 6.5*s); ctx.stroke();
+      c.strokeStyle = opts.rage ? '#ff5540' : opts.darkColor;
+      c.lineWidth = 3*s; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(0.2*s, -10*s); c.lineTo(9*s, -6.5*s); c.stroke();
+      c.beginPath(); c.moveTo(0.2*s, 10*s); c.lineTo(9*s, 6.5*s); c.stroke();
     }
   }
-  ctx.restore();
+  c.restore();
+
+  // блёстки (золотой)
+  if(fx.sparkle && !REDUCED){
+    c.strokeStyle = '#fff'; c.lineWidth = 1.5*s; c.lineCap = 'round';
+    [[-10,-9],[9,-12],[15,7],[-14,11]].forEach(([px,py], i)=>{
+      const a = Math.max(0, Math.sin(state.time*3 + i*1.7));
+      if(a < 0.25) return;
+      c.globalAlpha = baseA * a;
+      c.beginPath();
+      c.moveTo((px-3)*s, py*s); c.lineTo((px+3)*s, py*s);
+      c.moveTo(px*s, (py-3)*s); c.lineTo(px*s, (py+3)*s);
+      c.stroke();
+    });
+    c.globalAlpha = baseA;
+  }
 
   // shield bubble
   if(opts.shield){
-    ctx.strokeStyle = '#6fd9e8';
-    ctx.globalAlpha = 0.5 + Math.sin(state.time*8)*0.2;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, 34*s, 0, Math.PI*2); ctx.stroke();
-    ctx.globalAlpha = 1;
+    c.strokeStyle = '#6fd9e8';
+    c.globalAlpha = baseA * (0.5 + Math.sin(state.time*8)*0.2);
+    c.lineWidth = 3;
+    c.beginPath(); c.arc(0, 0, 34*s, 0, Math.PI*2); c.stroke();
   }
 
-  ctx.restore();
+  c.restore();
 }
 
 function drawPickup(m){
@@ -1164,7 +1296,7 @@ function render(){
     if(boss) drawTank(boss, { hullColor: boss.enraged ? '#ff5540' : '#e84c3d', darkColor:'#7e1d13', scale:2.3, angry:true, rage:boss.enraged, blink:boss.blink });
     if(state.mode !== 'menu'){
       const sk = skinById(profile.equipped);
-      drawTank(player, { hullColor:sk.hull, darkColor:sk.dark, scale:1, blink:player.blink, shield:player.shieldT>0 });
+      drawTank(player, { hullColor:sk.hull, darkColor:sk.dark, scale:1, blink:player.blink, shield:player.shieldT>0, fx:sk.fx });
     }
   }
 
@@ -1275,11 +1407,11 @@ function renderShop(){
   grid.innerHTML = '';
   for(const s of SKINS){
     const card = document.createElement('div'); card.className = 'skincard';
-    const prev = document.createElement('div'); prev.className = 'prev';
-    prev.style.background = s.hull;
-    const inner = document.createElement('div');
-    inner.style.cssText = 'position:absolute;left:13px;top:13px;width:24px;height:24px;border-radius:50%;background:' + s.dark;
-    prev.appendChild(inner);
+    // превью — настоящий танк в этом скине
+    const prev = document.createElement('canvas');
+    prev.className = 'prev'; prev.width = 76; prev.height = 76;
+    drawTank({ x:38, y:41, hull:-Math.PI/2, turret:-Math.PI/2, blink:0 },
+             { hullColor:s.hull, darkColor:s.dark, scale:0.8, fx:s.fx }, prev.getContext('2d'));
     const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = s.name;
     const btn = document.createElement('button'); btn.className = 'skbtn';
     const owned = profile.skins.includes(s.id);

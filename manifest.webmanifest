@@ -1,11 +1,11 @@
 {
   "name": "Стальные монстры",
   "short_name": "Танки",
-  "description": "Танчики в стиле Геранда: три волны врагов и босс",
+  "description": "Танчики в стиле Геранда: 100 волн, 10 боссов, магазин скинов",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
-  "orientation": "landscape",
+  "orientation": "any",
   "background_color": "#171c22",
   "theme_color": "#171c22",
   "lang": "ru",

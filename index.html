@@ -230,6 +230,7 @@ html{height:100%}
   <p class="score-final" id="loseScore"></p>
   <p class="record" id="loseBest"></p>
   <p class="record" id="losePlace"></p>
+  <p class="classdesc netstat"></p>
   <p>Танк отправлен в ремонт. Попробуй ещё раз!</p>
   <button class="btn" id="retryBtn">ЕЩЁ РАЗ</button>
   <button class="btn gray" id="retryStartBtn" hidden>С ПЕРВОЙ ВОЛНЫ</button>
@@ -241,6 +242,7 @@ html{height:100%}
   <p class="score-final" id="winScore"></p>
   <p class="record" id="winBest"></p>
   <p class="record" id="winPlace"></p>
+  <p class="classdesc netstat"></p>
   <p>Все 100 волн пройдены, финальный босс уничтожен. Поле боя — твоё!</p>
   <p>…или продолжи этот же бой в бесконечном выживании: волны всё труднее, боссы идут по второму кругу. До какой волны дотянешь?</p>
   <button class="btn" id="winSurviveBtn">ВЫЖИВАНИЕ ∞</button>
@@ -251,7 +253,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v21';
+const GAME_VERSION = 'v22';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -428,15 +430,40 @@ const ONLINE = {
 };
 function onlineEnabled(){ return !!(ONLINE.url && ONLINE.key); }
 async function submitOnline(e){
-  if(!onlineEnabled()) return;
+  if(!onlineEnabled()) return false;
   try{
-    await fetch(ONLINE.url + '/rest/v1/scores', {
+    const r = await fetch(ONLINE.url + '/rest/v1/scores', {
       method: 'POST',
       headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key,
                  'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify({ name: e.name, score: e.score, wave: e.wave, tank: e.tank, diff: e.diff, cups: e.cups })
     });
-  }catch(err){}
+    return r.ok;
+  }catch(err){ return false; }
+}
+// очередь недоставленных результатов: дошлём, когда появится сеть
+let outbox = [];
+try{
+  outbox = JSON.parse(localStorage.getItem('sm_outbox') || '[]');
+  if(!Array.isArray(outbox)) outbox = [];
+}catch(e){ outbox = []; }
+function saveOutbox(){ try{ localStorage.setItem('sm_outbox', JSON.stringify(outbox.slice(-20))); }catch(e){} }
+async function flushOutbox(){
+  if(!onlineEnabled() || !outbox.length) return;
+  const rest = outbox; outbox = []; saveOutbox();
+  for(const e of rest){
+    if(!(await submitOnline(e))) outbox.push(e);
+  }
+  saveOutbox();
+}
+async function pushScore(entry){
+  const ok = await submitOnline(entry);
+  if(!ok){ outbox.push(entry); saveOutbox(); }
+  else flushOutbox();
+  return ok;
+}
+function setNetStat(text){
+  document.querySelectorAll('.netstat').forEach(el => { el.textContent = text; });
 }
 async function fetchOnline(){
   if(!onlineEnabled()) return null;
@@ -453,7 +480,12 @@ function cupsOf(r){ return (r.cups|0) || (r.wave|0); } // старые запи�
 function submitScore(name, score, wave, tank, diff){
   const mult = (DIFFS[diff] || DIFFS.norm).cups;
   const entry = { name, score, wave, tank: tank || 'uni', diff: diff || 'norm', cups: wave * mult, ts: Date.now() };
-  submitOnline(entry);
+  if(onlineEnabled()){
+    setNetStat('🌍 Отправка результата...');
+    pushScore(entry).then(ok => setNetStat(ok
+      ? '🌍 Результат в мировом рейтинге ✓'
+      : '⚠ Не отправлено — нет связи. Дошлём после следующего боя.'));
+  }
   board.push(entry);
   board.sort((a,b) => cupsOf(b) - cupsOf(a) || b.score - a.score);
   board = board.slice(0, 30);
@@ -2879,6 +2911,7 @@ if(IS_TOUCH){
 window.claude?.hot?.snapshot?.(()=>({ score: state.score, wave: state.wave, hp: player.hp, mode: state.mode }));
 function boot(data){
   updateMenuBest();
+  setTimeout(flushOutbox, 2500); // дошлём результаты, застрявшие без сети
   if(data && (data.mode === 'play' || data.mode === 'pause')){
     startGame(data.wave || 1, data.score || 0, data.hp || player.maxHp);
   } else {

@@ -197,7 +197,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v8';
+const GAME_VERSION = 'v9';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1670,7 +1670,23 @@ if(window.claude?.hot?.ready){ window.claude.hot.ready(boot); } else { boot(wind
 
 <script>
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function(){ navigator.serviceWorker.register('./sw.js'); });
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./sw.js').then(function(reg){
+      // проверяем обновления при каждом возвращении в приложение
+      document.addEventListener('visibilitychange', function(){
+        if (!document.hidden) reg.update();
+      });
+    });
+    // новый service worker взял управление — перезагружаемся, но только в меню,
+    // чтобы не оборвать бой
+    var reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){
+      if (reloaded) return;
+      if (typeof state !== 'undefined' && state.mode !== 'menu') return;
+      reloaded = true;
+      location.reload();
+    });
+  });
 }
 </script>
 </body>

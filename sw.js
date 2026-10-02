@@ -1,5 +1,6 @@
-// Service worker: кэш-прежде-сети, игра работает без интернета после первого запуска.
-const CACHE = 'steel-monsters-v8';
+// Service worker: страница — сеть-прежде-кэша (обновления подтягиваются сразу,
+// в т.ч. в установленной PWA), остальное — кэш-прежде-сети. Офлайн работает.
+const CACHE = 'steel-monsters-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -21,8 +22,28 @@ self.addEventListener('activate', e => {
   );
 });
 
+function isPage(req){
+  if (req.mode === 'navigate') return true;
+  const url = new URL(req.url);
+  return url.origin === self.location.origin &&
+         (url.pathname.endsWith('/index.html') || url.pathname.endsWith('/'));
+}
+
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  if (isPage(e.request)) {
+    // свежая страница из сети; кэш — только когда сети нет
+    e.respondWith(
+      fetch(e.request).then(resp => {
+        if (resp && resp.ok) {
+          const copy = resp.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+        }
+        return resp;
+      }).catch(() => caches.match(e.request).then(hit => hit || caches.match('./index.html')))
+    );
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then(hit => {
       if (hit) return hit;

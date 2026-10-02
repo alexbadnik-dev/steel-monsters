@@ -251,7 +251,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v20';
+const GAME_VERSION = 'v21';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -424,7 +424,7 @@ let board = loadBoard();
 // и впишите сюда Project URL и anon-ключ. Вкладка «МИР» появится сама.
 const ONLINE = {
   url: 'https://rlgqylywmbkwaojsgsty.supabase.co',
-  key: 'sb_publishable_IA70_uF4A6_kAeb8epXERA_lDV9Co40'
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsZ3F5bHl3bWJrd2FvanNnc3R5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzM3NzEsImV4cCI6MjEwNjU0OTc3MX0.roJLpsi6topofBTuq9kHpM4bJ33pSGXX4Y-IDu5LqU0'
 };
 function onlineEnabled(){ return !!(ONLINE.url && ONLINE.key); }
 async function submitOnline(e){

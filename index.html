@@ -144,6 +144,8 @@ html{height:100%}
   <input id="nameInput" maxlength="16" placeholder="Имя танкиста" autocomplete="off">
   <div class="menurow" id="classRow"></div>
   <p class="classdesc" id="classDesc"></p>
+  <div class="menurow" id="diffRow"></div>
+  <p class="classdesc" id="diffDesc"></p>
   <p class="record" id="menuBest" hidden></p>
   <button class="btn" id="startBtn">В БОЙ!</button>
   <button class="btn gray" id="contBtn" hidden></button>
@@ -202,6 +204,7 @@ html{height:100%}
   <p>Бонусы можно прокачать в магазине: сильнее лечилка, дольше щит и скорострел, а тройной на максимуме превращается в ПЯТЬ стволов.</p>
   <p>Боссы — каждая 10-я волна, у каждого свой характер. За босса танк получает перки: здоровье, урон, перезарядку, а с третьего — регенерацию.</p>
   <p>Прошёл все 100 волн? После победы открывается бесконечное ВЫЖИВАНИЕ: тот же бой продолжается дальше, враги всё сильнее, рейтинг запомнит твою лучшую волну.</p>
+  <p>Сложность: на ХАРДЕ враги в 1.6 раза живучее и бьют в 1.5 раза больнее, зато монеты ×1.5 и каждый пройденный уровень даёт 2 🏆. КОШМАР (HP ×2.5, урон ×2.2, монеты ×2.5, кубки ×3) открывается после прохождения кампании.</p>
   <p>Берегись: снайпер целится красным лазером, камикадзе взрывается при контакте, миномётчик и дроны бомбят по красным кругам — выезжай из них! Медик с крестом лечит своих — выбивай его первым.</p>
   <p>⚡ Супер-способность «Ударная волна» заряжается убийствами (жёлтая полоска под здоровьем): сметает все вражеские снаряды и бомбы и бьёт всех вокруг. Активация — <b>Q</b> на компьютере или жёлтая кнопка над огнём на телефоне.</p>
   <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины, классы танков и питомцев: Напарник стреляет по врагам, Ремонтник чинит твой танк.</p>
@@ -248,7 +251,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v17';
+const GAME_VERSION = 'v18';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -347,6 +350,18 @@ const CLASSES = {
 };
 function playerClass(){ return CLASSES[profile.tank] || CLASSES.uni; }
 
+// ---------- сложность: враги сильнее — наград больше, кубки с множителем ----------
+const DIFFS = {
+  norm:  { name:'НОРМА',  hp:1,   dmg:1,   coins:1,   cups:1, drop:0.32 },
+  hard:  { name:'ХАРД',   hp:1.6, dmg:1.5, coins:1.5, cups:2, drop:0.26 },
+  night: { name:'КОШМАР', hp:2.5, dmg:2.2, coins:2.5, cups:3, drop:0.2 }
+};
+function currentDiff(){ return DIFFS[profile.diff] || DIFFS.norm; }
+// Кошмар открывается после прохождения кампании (волна 100+)
+function nightmareUnlocked(){
+  return (profile.bestWave|0) >= 100 || board.some(r => (r.wave|0) >= 100);
+}
+
 // затемнение цвета для корпуса при пользовательском цвете скина
 function shade(hex, k){
   const n = parseInt(hex.slice(1), 16);
@@ -372,6 +387,8 @@ function loadProfile(){
       classes: Array.isArray(p.classes) ? p.classes.filter(c => typeof c === 'string') : ['uni'],
       pets: Array.isArray(p.pets) ? p.pets.filter(c => typeof c === 'string') : [],
       pet: ['bot','heal'].includes(p.pet) ? p.pet : null,
+      diff: ['norm','hard','night'].includes(p.diff) ? p.diff : 'norm',
+      bestWave: Number.isFinite(p.bestWave) ? Math.max(0, p.bestWave|0) : 0,
       upg: (u => ({
         med:    Math.min(3, Math.max(0, (u.med|0))),
         shield: Math.min(3, Math.max(0, (u.shield|0))),
@@ -381,7 +398,7 @@ function loadProfile(){
       customColor: /^#[0-9a-f]{6}$/i.test(p.customColor || '') ? p.customColor : null
     };
   }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', classes:['uni'], pets:[], pet:null,
-                      upg:{ med:0, shield:0, rapid:0, triple:0 }, customColor:null }; }
+                      diff:'norm', bestWave:0, upg:{ med:0, shield:0, rapid:0, triple:0 }, customColor:null }; }
 }
 const profile = loadProfile();
 if(!profile.skins.includes('green')) profile.skins.push('green');
@@ -400,11 +417,13 @@ function loadBoard(){
   }catch(e){ return []; }
 }
 let board = loadBoard();
-// кубки: 1 волна = 1 🏆; сортируем по кубкам, при равенстве — по очкам
-function submitScore(name, score, wave, tank){
-  const entry = { name, score, wave, tank: tank || 'uni', ts: Date.now() };
+// кубки: 1 волна = 1 🏆 (на Харде ×2, на Кошмаре ×3); сортируем по кубкам
+function cupsOf(r){ return (r.cups|0) || (r.wave|0); } // старые записи — 1 кубок за волну
+function submitScore(name, score, wave, tank, diff){
+  const mult = (DIFFS[diff] || DIFFS.norm).cups;
+  const entry = { name, score, wave, tank: tank || 'uni', diff: diff || 'norm', cups: wave * mult, ts: Date.now() };
   board.push(entry);
-  board.sort((a,b) => (b.wave|0) - (a.wave|0) || b.score - a.score);
+  board.sort((a,b) => cupsOf(b) - cupsOf(a) || b.score - a.score);
   board = board.slice(0, 30);
   try{ localStorage.setItem('sm_board', JSON.stringify(board)); }catch(e){}
   return board.indexOf(entry) + 1; // 0 — не вошёл в топ
@@ -638,11 +657,12 @@ const BOSS_COUNT = TOTAL_WAVES / BOSS_EVERY;
 function isBossWave(n){ return n % BOSS_EVERY === 0; }
 function bossNumOf(n){ return n / BOSS_EVERY; }
 
-// Множители сложности для волны n (1..100)
+// Множители сложности для волны n (1..100) с учётом выбранного режима
 function diffFor(n){
+  const D = currentDiff();
   return {
-    hp:    1 + (n-1)*0.02,                    // x3 к 100-й волне
-    dmg:   1 + (n-1)*0.015,                   // x2.5
+    hp:    (1 + (n-1)*0.02) * D.hp,           // x3 к 100-й волне (норма)
+    dmg:   (1 + (n-1)*0.015) * D.dmg,         // x2.5
     sp:    1 + Math.min(0.5, (n-1)*0.005),    // до +50% скорости
     fire:  Math.max(0.55, 1 - (n-1)*0.004),   // интервалы стрельбы сжимаются
     bspd:  1 + Math.min(0.45, (n-1)*0.004),   // снаряды быстрее
@@ -794,10 +814,11 @@ function spawnBoss(){
   const final = state.wave === TOTAL_WAVES;
   // в выживании (после 100-й) боссы идут по второму кругу, но сильнее
   const def = BOSS_DEFS[(num-1) % BOSS_DEFS.length];
-  const hp = Math.round((380 + 240*num + (final ? 400 : 0)) * (def.hpMult || 1));
+  const D = currentDiff();
+  const hp = Math.round((380 + 240*num + (final ? 400 : 0)) * (def.hpMult || 1) * D.hp);
   boss = {
     num, final, def, x: W+140, y: H/2, r: final ? 62 : 52, hp, maxHp:hp,
-    dmg: 12 + num, bspd: 280 + num*8,
+    dmg: Math.round((12 + num) * D.dmg), bspd: 280 + num*8,
     fireRate: Math.max(0.8, 1.35 - num*0.04),
     hull: Math.PI, turret: Math.PI, fireT:1.2, pattern:0, t:0, spiralA:0,
     dashT: 5, dashing: 0, dashA: 0, droneT: 5,
@@ -829,12 +850,13 @@ function startWave(n){
   saveCheckpoint(n);
   if(waveClearT){ clearTimeout(waveClearT); waveClearT = null; }
   const surv = n > TOTAL_WAVES; // режим выживания после сотой
+  const dTag = profile.diff === 'norm' ? '' : ' · ' + currentDiff().name;
   if(isBossWave(n)){
-    $('wavetext').textContent = surv ? ('Выживание · волна ' + n + ' · БОСС') : ('Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС');
+    $('wavetext').textContent = (surv ? ('Выживание · волна ' + n + ' · БОСС') : ('Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС')) + dTag;
     waveBanner = { text: n === TOTAL_WAVES ? 'ФИНАЛЬНЫЙ БОСС!' : ('БОСС ' + bossNumOf(n) + '!'), t: 2.2 };
     spawnBoss();
   } else {
-    $('wavetext').textContent = surv ? ('Выживание · волна ' + n) : ('Волна ' + n + ' / ' + TOTAL_WAVES);
+    $('wavetext').textContent = (surv ? ('Выживание · волна ' + n) : ('Волна ' + n + ' / ' + TOTAL_WAVES)) + dTag;
     // на входе в новую декаду объявляем биом
     waveBanner = n % 10 === 1
       ? { text: (n === TOTAL_WAVES + 1 ? 'ВЫЖИВАНИЕ! · ' : 'ВОЛНА ' + n + ' · ') + biomeFor(n).name, t: 2.6 }
@@ -854,9 +876,9 @@ function applyProgress(wave){
   player.maxHp = cls.hp + ups*10;
   player.dmg = cls.dmg + ups*2;
   player.speed = cls.speed + ups*2;
-  player.cdMult = Math.max(0.7, 1 - ups*0.03);
-  player.regen = ups >= 3 ? 0.25*(ups-2) : 0;
-  player.buffBonus = ups*0.4;
+  player.cdMult = Math.max(0.75, 1 - ups*0.03);
+  player.regen = ups >= 3 ? 0.2*(ups-2) : 0;
+  player.buffBonus = ups*0.3;
 }
 
 function resetGame(wave, score, hp){
@@ -928,7 +950,7 @@ function onBossKilled(){
   player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp*0.5));
   addFloat(player.x, player.y - 44, '+10 HP · +2 УРОН · −3% ПЕРЕЗАРЯДКА', '#6fe58f');
   if(b.num === 3) addFloat(player.x, player.y - 70, 'НОВЫЙ ПЕРК: РЕГЕНЕРАЦИЯ!', '#f1c40f');
-  else if(b.num > 3) addFloat(player.x, player.y - 70, 'РЕГЕН +0.25/с · БОНУСЫ ДОЛЬШЕ', '#f1c40f');
+  else if(b.num > 3) addFloat(player.x, player.y - 70, 'РЕГЕН +0.2/с · БОНУСЫ ДОЛЬШЕ', '#f1c40f');
   sfx.win();
   const nextWave = state.wave + 1;
   const chapter = STORY.bosses[b.num - 1];
@@ -953,11 +975,13 @@ function endGame(win){
   $('bossbarwrap').hidden = true;
   if(state.score > best){ best = state.score; saveBest(best); }
   const rec = 'Рекорд: ' + best;
-  // монеты за бой (10 очков = 1 монета), без повторного начисления после победы
-  const earned = Math.max(0, Math.round((state.score - (state.awardedFor || 0)) / 10));
+  // монеты за бой (10 очков = 1 монета, на Харде/Кошмаре больше)
+  const earned = Math.max(0, Math.round((state.score - (state.awardedFor || 0)) / 10 * currentDiff().coins));
   state.awardedFor = state.score;
-  profile.coins += earned; saveProfile();
-  const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave, profile.tank);
+  profile.coins += earned;
+  profile.bestWave = Math.max(profile.bestWave|0, state.wave);
+  saveProfile();
+  const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave, profile.tank, profile.diff);
   const info = '+' + earned + ' 🪙' + (place ? ' · Место в рейтинге: ' + place : '');
   $(win ? 'winPlace' : 'losePlace').textContent = info;
   if(win){
@@ -1236,7 +1260,7 @@ const PICKS = [
   { type:'magnet', w:1.4 }
 ];
 function dropPickup(x, y){
-  if(Math.random() > 0.32) return;
+  if(Math.random() > currentDiff().drop) return;
   const total = PICKS.reduce((s,p)=>s+p.w,0);
   let r = Math.random()*total;
   let type = 'med';
@@ -2484,12 +2508,15 @@ function renderBoard(){
     return;
   }
   const short = { uni:'У', fast:'Ш', heavy:'Т' };
+  const dShort = { hard:'·ХАРД', night:'·КОШМАР' };
   rows.slice(0, 10).forEach((r, i)=>{
     const row = document.createElement('div'); row.className = 'boardrow';
     row.innerHTML = '<span class="pl">' + (i+1) + '</span><span class="nm"></span>' +
-                    '<span class="wv"></span><span class="sc">🏆 ' + (r.wave|0) + '</span>';
-    row.querySelector('.nm').textContent = r.name + (boardTab === 'all' && r.tank ? ' · ' + (short[r.tank] || '') : '');
-    row.querySelector('.wv').textContent = (r.score|0) + ' очк.';
+                    '<span class="wv"></span><span class="sc">🏆 ' + cupsOf(r) + '</span>';
+    row.querySelector('.nm').textContent = r.name
+      + (boardTab === 'all' && r.tank ? ' · ' + (short[r.tank] || '') : '')
+      + (dShort[r.diff] || '');
+    row.querySelector('.wv').textContent = 'в.' + (r.wave|0) + ' · ' + (r.score|0);
     list.append(row);
   });
 }
@@ -2505,6 +2532,33 @@ $('nameInput').addEventListener('input', e=>{
   profile.name = e.target.value.slice(0,16);
   saveProfile();
 });
+
+// ---------- выбор сложности ----------
+function renderDiffRow(){
+  const row = $('diffRow');
+  row.innerHTML = '';
+  for(const [id, d] of Object.entries(DIFFS)){
+    const locked = id === 'night' && !nightmareUnlocked();
+    const b = document.createElement('button');
+    b.className = 'classbtn' + (profile.diff === id ? ' sel' : '') + (locked ? ' locked' : '');
+    b.style.minWidth = '0';
+    b.style.flexDirection = 'row';
+    b.textContent = (locked ? '🔒 ' : '') + d.name;
+    b.addEventListener('click', ()=>{
+      if(locked){
+        $('diffDesc').textContent = 'КОШМАР откроется после прохождения всех 100 волн!';
+        return;
+      }
+      profile.diff = id; saveProfile();
+      renderDiffRow();
+    });
+    row.append(b);
+  }
+  const d = currentDiff();
+  $('diffDesc').textContent = d === DIFFS.norm
+    ? 'Обычный бой · кубки ×1'
+    : 'Враги: HP ×' + d.hp + ', урон ×' + d.dmg + ' · монеты ×' + d.coins + ' · кубки ×' + d.cups;
+}
 
 // ---------- выбор музыки ----------
 function renderMusicRow(){
@@ -2605,6 +2659,7 @@ function updateMenuBest(){
   $('nameInput').value = profile.name;
   $('verText').textContent = 'Версия ' + GAME_VERSION;
   renderClassRow();
+  renderDiffRow();
   renderMusicRow();
 }
 

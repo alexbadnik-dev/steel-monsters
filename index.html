@@ -250,13 +250,13 @@ const SKINS = [
   { id:'camo',    name:'Камуфляж',   cost:300,  hull:'#6e8a52', dark:'#33461f', fx:{ pattern:'camo' } },
   { id:'melon',   name:'Арбуз',      cost:350,  hull:'#4ec46a', dark:'#1f7a40', fx:{ pattern:'melon', turretColor:'#ff6b6b' } },
   { id:'tiger',   name:'Тигр',       cost:500,  hull:'#d8b267', dark:'#6e5634', fx:{ pattern:'stripes', barrel:'heavy' } },
-  { id:'double',  name:'Двустволка', cost:600,  hull:'#8fa6b8', dark:'#4e6274', fx:{ barrel:'double' } },
+  { id:'double',  name:'Двустволка', cost:600,  hull:'#8fa6b8', dark:'#4e6274', fx:{ barrel:'double', turret:'wide' } },
   { id:'stealth', name:'Стелс',      cost:700,  hull:'#3c4650', dark:'#161b20', fx:{ body:'stealth', eyeColor:'#6fd9e8' } },
   { id:'robot',   name:'Робот',      cost:800,  hull:'#9db0bf', dark:'#5c7183', fx:{ turret:'box', antenna:true, eyeColor:'#ffd84d' } },
-  { id:'ghost',   name:'Призрак',    cost:900,  hull:'#e8eef2', dark:'#7d8a94', fx:{ alpha:0.55 } },
+  { id:'ghost',   name:'Призрак',    cost:900,  hull:'#e8eef2', dark:'#7d8a94', fx:{ alpha:0.55, glow:'#bfe8ff' } },
   { id:'lava',    name:'Лава',       cost:1000, hull:'#5a2c20', dark:'#2b1410', fx:{ pattern:'cracks', glow:'#ff6a3a' } },
   { id:'ufo',     name:'НЛО',        cost:1200, hull:'#7ee0d2', dark:'#2d7a6e', fx:{ body:'hover', glow:'#7ee0d2' } },
-  { id:'gold',    name:'Золотой',    cost:1500, hull:'#f6d32d', dark:'#8a6d08', fx:{ sparkle:true } }
+  { id:'gold',    name:'Золотой',    cost:1500, hull:'#f6d32d', dark:'#8a6d08', fx:{ sparkle:true, glow:'#ffd84d', barrel:'heavy' } }
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
 function loadProfile(){
@@ -361,6 +361,22 @@ const BIOMES = [
   { name:'ВУЛКАН',        ground:'#2b1c1a', grid:'#38231f', patch:'#221513', bush:['#5a2c20','#743828'], rock:['#5c4038','#705048'], crater:['#3a1410','#7a3020','#c2402a'] }
 ];
 function biomeFor(n){ return BIOMES[Math.min(BIOMES.length-1, Math.floor((n-1)/10))]; }
+
+// ---------- 10 уникальных боссов: облик + поведение ----------
+// dash — рывки к игроку; drones — запускает дроны-бомбардировщики;
+// spiral — вращающийся круговой залп; fan — доп. снаряды в веере; minion — тип подмоги
+const BOSS_DEFS = [
+  { name:'ЖЕЛЕЗНЫЙ КУЛАК', hull:'#e84c3d', dark:'#7e1d13', fx:{},                                         minion:'scout' },
+  { name:'ОХОТНИК',        hull:'#8fa6b8', dark:'#39434d', fx:{ body:'stealth', eyeColor:'#6fd9e8' },      minion:'scout',  spdMult:1.5, dash:true },
+  { name:'КРЕПОСТЬ',       hull:'#c2a06b', dark:'#6e5634', fx:{ barrel:'heavy', turret:'box' },            minion:'soldier', hpMult:1.35, spdMult:0.6, fan:1 },
+  { name:'ШЕРШЕНЬ',        hull:'#ffd84d', dark:'#6e5612', fx:{ pattern:'stripes' },                       minion:'scout',  drones:true },
+  { name:'МОРОЗ',          hull:'#9fd9e8', dark:'#2d6a7a', fx:{ glow:'#bfe8ff' },                          minion:'scout',  fan:2 },
+  { name:'ПАУК',           hull:'#5a4a6a', dark:'#241c2e', fx:{ barrel:'double', antenna:true },           minion:'kam' },
+  { name:'ФАНТОМ',         hull:'#e8eef2', dark:'#7d8a94', fx:{ alpha:0.6 },                               minion:'soldier', spdMult:1.35, dash:true },
+  { name:'ВУЛКАН',         hull:'#5a2c20', dark:'#2b1410', fx:{ pattern:'cracks', glow:'#ff6a3a' },        minion:'heavy',  hpMult:1.2 },
+  { name:'ШТОРМ',          hull:'#6db3f2', dark:'#2d5f8a', fx:{ glow:'#9fd1ff', turret:'wide' },           minion:'soldier', spiral:true },
+  { name:'ИМПЕРАТОР',      hull:'#f6d32d', dark:'#8a6d08', fx:{ sparkle:true, glow:'#ffd84d', barrel:'heavy' }, minion:'mixed', hpMult:1.25, drones:true }
+];
 const TOTAL_WAVES = 100;
 const BOSS_EVERY = 10;              // каждая 10-я волна — босс, всего 10 боссов
 const BOSS_COUNT = TOTAL_WAVES / BOSS_EVERY;
@@ -406,6 +422,7 @@ const player = {
   blink:0, nextBlink:2, shieldT:0, rapidT:0, tripleT:0, trackT:0
 };
 let bullets = [], enemies = [], pickups = [], particles = [], tracks = [], floats = [];
+let drones = [], bombs = [];
 let boss = null;
 let waveBanner = { text:'', t:0 };
 let minionTimer = 0;
@@ -453,17 +470,28 @@ function spawnEnemy(type, waveN){
 function spawnBoss(){
   const num = bossNumOf(state.wave);
   const final = state.wave === TOTAL_WAVES;
-  const hp = 380 + 240*num + (final ? 400 : 0);
+  const def = BOSS_DEFS[num-1] || BOSS_DEFS[0];
+  const hp = Math.round((380 + 240*num + (final ? 400 : 0)) * (def.hpMult || 1));
   boss = {
-    num, final, x: W+140, y: H/2, r: final ? 62 : 52, hp, maxHp:hp,
+    num, final, def, x: W+140, y: H/2, r: final ? 62 : 52, hp, maxHp:hp,
     dmg: 12 + num, bspd: 280 + num*8,
     fireRate: Math.max(0.8, 1.35 - num*0.04),
-    hull: Math.PI, turret: Math.PI, fireT:1.2, pattern:0, t:0,
+    hull: Math.PI, turret: Math.PI, fireT:1.2, pattern:0, t:0, spiralA:0,
+    dashT: 5, dashing: 0, dashA: 0, droneT: 5,
     blink:0, nextBlink: rand(1,3), entering:true, enraged:false
   };
-  $('bosslabel').textContent = final ? 'ФИНАЛЬНЫЙ БОСС' : ('БОСС ' + num + ' / ' + BOSS_COUNT);
+  $('bosslabel').textContent = def.name + (final ? '' : ' · ' + num + '/' + BOSS_COUNT);
   $('bossbarwrap').hidden = false;
   minionTimer = 6;
+}
+
+function spawnDrone(x, y){
+  const D = diffFor(state.wave);
+  drones.push({
+    x, y, r:14, t: rand(0,10),
+    hp: Math.round(26*D.hp), maxHp: Math.round(26*D.hp),
+    a: Math.PI, dropT: rand(1.6,2.6), dmg: 18*D.dmg, score: 150
+  });
 }
 
 function startWave(n){
@@ -493,6 +521,7 @@ function applyProgress(wave){
 
 function resetGame(wave, score, hp){
   bullets = []; enemies = []; pickups = []; particles = []; tracks = []; floats = []; boss = null;
+  drones = []; bombs = [];
   applyProgress(wave ?? 1);
   player.x = W*0.5; player.y = H*0.65;
   player.hp = Math.min(player.maxHp, hp ?? player.maxHp);
@@ -531,6 +560,9 @@ function resumeGame(){
 function onBossKilled(){
   const b = boss; boss = null;
   explode(b.x, b.y, '#ff8577', 46); sfx.boom(); vibrate(300);
+  // дроны босса падают вместе с ним
+  for(const d of drones) explode(d.x, d.y, '#ff9f43', 12);
+  drones = []; bombs = [];
   const sc = 500 + b.num*250;
   state.score += sc;
   addFloat(b.x, b.y, '+' + sc);
@@ -683,7 +715,7 @@ function bossShoot(b){
   const base = angTo(b.x, b.y, player.x, player.y);
   const spd = b.bspd * (b.enraged ? 1.15 : 1);
   if(b.pattern < 3){
-    const c = b.enraged ? (b.final ? 7 : 5) : 3;
+    const c = (b.enraged ? (b.final ? 7 : 5) : 3) + (b.def.fan || 0);
     for(let i=0;i<c;i++){
       const a = base + (i-(c-1)/2)*0.2;
       bullets.push({ x:b.x+Math.cos(a)*(b.r+14), y:b.y+Math.sin(a)*(b.r+14),
@@ -691,8 +723,10 @@ function bossShoot(b){
     }
   } else {
     const n = (b.enraged ? 14 : 10) + (b.final ? 4 : 0);
+    // у Шторма круговой залп вращается от выстрела к выстрелу
+    const ringBase = b.def.spiral ? (b.spiralA += 0.7) : base;
     for(let i=0;i<n;i++){
-      const a = base + i*(Math.PI*2/n);
+      const a = ringBase + i*(Math.PI*2/n);
       bullets.push({ x:b.x+Math.cos(a)*(b.r+14), y:b.y+Math.sin(a)*(b.r+14),
                      vx:Math.cos(a)*(230 + b.num*6), vy:Math.sin(a)*(230 + b.num*6), from:'e', dmg:b.dmg-2, r:5 });
     }
@@ -858,31 +892,87 @@ function update(dt){
       boss.x -= 90*dt;
       if(boss.x < W*0.72) boss.entering = false;
     } else {
-      const spd = boss.enraged ? 1.5 : 1;
+      const def = boss.def;
+      const spd = (boss.enraged ? 1.5 : 1) * (def.spdMult || 1);
       boss.y += Math.sin(boss.t*0.9*spd) * 85 * spd * dt;
       boss.x += Math.cos(boss.t*0.5*spd) * 40 * spd * dt;
-      boss.x = Math.max(W*0.4, Math.min(W-boss.r-10, boss.x));
+      // рывок к игроку (Охотник, Фантом)
+      if(def.dash){
+        boss.dashT -= dt;
+        if(boss.dashT <= 0){
+          boss.dashing = 0.55;
+          boss.dashA = angTo(boss.x, boss.y, player.x, player.y);
+          boss.dashT = boss.enraged ? 3.5 : 5.5;
+          sfx.eshot();
+        }
+        if(boss.dashing > 0){
+          boss.dashing -= dt;
+          boss.x += Math.cos(boss.dashA) * 320 * dt;
+          boss.y += Math.sin(boss.dashA) * 320 * dt;
+        }
+      }
+      boss.x = Math.max(W*0.25, Math.min(W-boss.r-10, boss.x));
       boss.y = Math.max(boss.r+30, Math.min(H-boss.r-30, boss.y));
       boss.fireT -= dt;
       if(boss.fireT <= 0){ bossShoot(boss); boss.fireT = boss.fireRate * (boss.enraged ? 0.66 : 1); }
+      // дроны-бомбардировщики (Шершень, Император)
+      if(def.drones){
+        boss.droneT -= dt;
+        if(boss.droneT <= 0 && drones.length < (boss.enraged ? 3 : 2)){
+          spawnDrone(boss.x, boss.y);
+          addFloat(boss.x, boss.y - boss.r - 10, 'ДРОН!', '#ff9f43');
+          boss.droneT = boss.enraged ? 6 : 8.5;
+        }
+      }
       minionTimer -= dt;
       if(minionTimer <= 0 && enemies.length < (boss.enraged ? 3 : 2)){
-        const mt = boss.num >= 7 ? (Math.random()<.5 ? 'soldier' : 'heavy')
-                 : boss.num >= 4 ? (Math.random()<.5 ? 'scout' : 'soldier') : 'scout';
+        const mt = def.minion === 'mixed'
+          ? ['scout','soldier','kam'][Math.floor(rand(0,3))] : def.minion;
         spawnEnemy(mt);
         minionTimer = boss.enraged ? 7 : 9;
       }
     }
     if(!boss.enraged && boss.hp <= boss.maxHp/2){
       boss.enraged = true;
-      waveBanner = { text:'БОСС В ЯРОСТИ!', t: 2.2 };
-      $('bosslabel').textContent = 'БОСС В ЯРОСТИ';
+      waveBanner = { text: boss.def.name + ' В ЯРОСТИ!', t: 2.2 };
+      $('bosslabel').textContent = boss.def.name + ' В ЯРОСТИ';
       sfx.enrage(); vibrate(150);
       state.shake = Math.min(state.shake + (REDUCED?0:8), 12);
     }
     boss.turret = lerpAng(boss.turret, angTo(boss.x,boss.y,player.x,player.y), Math.min(1, dt*3.5));
     boss.hull = boss.turret;
     $('bossbar').style.width = Math.max(0, boss.hp/boss.maxHp*100) + '%';
+  }
+
+  // дроны: кружат над игроком и сбрасывают бомбы
+  for(const d of drones){
+    d.t += dt;
+    const a = angTo(d.x, d.y, player.x, player.y);
+    const dd = dist(d.x, d.y, player.x, player.y);
+    const orbit = Math.sin(d.t*1.6);
+    const ma = dd < 150 ? a + Math.PI/2*Math.sign(orbit || 1) : a + orbit*0.5;
+    d.a = lerpAng(d.a, ma, Math.min(1, dt*3.5));
+    d.x += Math.cos(d.a)*165*dt;
+    d.y += Math.sin(d.a)*165*dt;
+    d.x = Math.max(20, Math.min(W-20, d.x));
+    d.y = Math.max(20, Math.min(H-20, d.y));
+    d.dropT -= dt;
+    if(d.dropT <= 0 && dd < 280){
+      bombs.push({ x:d.x, y:d.y, t:0, fuse:1.15, r:58, dmg:d.dmg });
+      sfx.eshot();
+      d.dropT = rand(2.4, 3.4);
+    }
+  }
+  // бомбы: телеграф, затем взрыв по области
+  for(let i = bombs.length-1; i >= 0; i--){
+    const bm = bombs[i];
+    bm.t += dt;
+    if(bm.t >= bm.fuse){
+      explode(bm.x, bm.y, '#ff9f43', 22); sfx.boom();
+      state.shake = Math.min(state.shake + (REDUCED?0:5), 10);
+      if(dist(bm.x, bm.y, player.x, player.y) < bm.r + player.r*0.4) damagePlayer(bm.dmg);
+      bombs.splice(i,1);
+    }
   }
 
   // bullets
@@ -907,6 +997,22 @@ function update(dt){
             checkWaveClear();
           }
           break;
+        }
+      }
+      if(!consumed){
+        for(let j = drones.length-1; j >= 0; j--){
+          const dr = drones[j];
+          if(dist(b.x,b.y,dr.x,dr.y) < dr.r + b.r){
+            dr.hp -= b.dmg; consumed = true;
+            explode(b.x, b.y, '#f1c40f', 4); sfx.hit();
+            if(dr.hp <= 0){
+              explode(dr.x, dr.y, '#ff9f43', 16); sfx.boom(); vibrate(40);
+              state.score += dr.score;
+              addFloat(dr.x, dr.y, '+' + dr.score);
+              drones.splice(j,1);
+            }
+            break;
+          }
         }
       }
       if(!consumed && boss && dist(b.x,b.y,boss.x,boss.y) < boss.r + b.r){
@@ -1091,7 +1197,14 @@ function drawTank(t, opts, c){
     c.fillRect(32*s, -4*s, 4*s, 8*s);
   }
   const tc = fx.turretColor || opts.hullColor;
-  if(fx.turret === 'box'){
+  if(fx.turret === 'wide'){
+    c.fillStyle = tc;
+    rrectC(c, -14*s, -9*s, 28*s, 18*s, 7*s); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
+    rrectC(c, -14*s, -9*s, 28*s, 18*s, 7*s); c.stroke();
+    c.fillStyle = '#ffffff22';
+    rrectC(c, -14*s, -9*s, 28*s, 8*s, 7*s); c.fill();
+  } else if(fx.turret === 'box'){
     c.fillStyle = tc;
     rrectC(c, -11*s, -11*s, 22*s, 22*s, 4*s); c.fill();
     c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
@@ -1141,7 +1254,7 @@ function drawTank(t, opts, c){
   // блёстки (золотой)
   if(fx.sparkle && !REDUCED){
     c.strokeStyle = '#fff'; c.lineWidth = 1.5*s; c.lineCap = 'round';
-    [[-10,-9],[9,-12],[15,7],[-14,11]].forEach(([px,py], i)=>{
+    [[-10,-9],[9,-12],[15,7],[-14,11],[2,14],[13,-2]].forEach(([px,py], i)=>{
       const a = Math.max(0, Math.sin(state.time*3 + i*1.7));
       if(a < 0.25) return;
       c.globalAlpha = baseA * a;
@@ -1266,6 +1379,16 @@ function render(){
 
   for(const m of pickups) drawPickup(m);
 
+  // телеграф падающих бомб
+  for(const bm of bombs){
+    const k = Math.min(1, bm.t/bm.fuse);
+    ctx.strokeStyle = '#ff5540';
+    ctx.globalAlpha = 0.45 + 0.3*Math.sin(state.time*18);
+    ctx.lineWidth = 2 + 2*k;
+    ctx.beginPath(); ctx.arc(bm.x, bm.y, bm.r*(0.35 + 0.65*k), 0, Math.PI*2); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   // лазерные прицелы снайперов (под танками)
   for(const e of enemies){
     if(e.type === 'sniper' && e.lockA != null){
@@ -1293,7 +1416,12 @@ function render(){
         ctx.globalAlpha = 1;
       }
     }
-    if(boss) drawTank(boss, { hullColor: boss.enraged ? '#ff5540' : '#e84c3d', darkColor:'#7e1d13', scale:2.3, angry:true, rage:boss.enraged, blink:boss.blink });
+    if(boss){
+      const bfx = Object.assign({}, boss.def.fx);
+      if(boss.enraged) bfx.glow = '#ff5540'; // в ярости любой босс пылает красным
+      drawTank(boss, { hullColor:boss.def.hull, darkColor:boss.def.dark, scale: boss.final ? 2.6 : 2.3,
+                       angry:true, rage:boss.enraged, blink:boss.blink, fx:bfx });
+    }
     if(state.mode !== 'menu'){
       const sk = skinById(profile.equipped);
       drawTank(player, { hullColor:sk.hull, darkColor:sk.dark, scale:1, blink:player.blink, shield:player.shieldT>0, fx:sk.fx });
@@ -1324,6 +1452,37 @@ function render(){
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r*0.45, 0, Math.PI*2); ctx.fill();
+  }
+
+  // дроны (летят над полем боя)
+  for(const d of drones){
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(d.x + 10, d.y + 16, 13, 6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.save();
+    ctx.translate(d.x, d.y + Math.sin(d.t*5)*2);
+    ctx.rotate(d.a);
+    // дельта-крыло
+    ctx.fillStyle = '#7a8694';
+    ctx.beginPath();
+    ctx.moveTo(15,0); ctx.lineTo(-10,-11); ctx.lineTo(-5,0); ctx.lineTo(-10,11);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#4e5864';
+    ctx.beginPath(); ctx.moveTo(15,0); ctx.lineTo(0,-4); ctx.lineTo(0,4); ctx.closePath(); ctx.fill();
+    // пропеллер
+    ctx.strokeStyle = '#c8d2da'; ctx.lineWidth = 2;
+    const pa = d.t*26;
+    ctx.beginPath();
+    ctx.moveTo(-8, -7*Math.sin(pa)); ctx.lineTo(-8, 7*Math.sin(pa));
+    ctx.stroke();
+    ctx.restore();
+    if(d.hp < d.maxHp){
+      const w = 26, frac = Math.max(0, d.hp/d.maxHp);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(d.x - w/2 - 1, d.y - 25, w + 2, 5);
+      ctx.fillStyle = frac > 0.35 ? '#6fe58f' : '#ff7b6b';
+      ctx.fillRect(d.x - w/2, d.y - 24, w * frac, 3);
+    }
   }
 
   // particles

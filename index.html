@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v23';
+const GAME_VERSION = 'v24';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -533,11 +533,75 @@ function beep(freq, dur, type, vol, slide){
   o.connect(g); g.connect(ac.destination);
   o.start(); o.stop(ac.currentTime+dur);
 }
+// шумовой слой для «пороховых» звуков: отфильтрованный белый шум
+let sfxNoiseBuf = null;
+function noiseBurst(dur, vol, ftype, freq, slide){
+  const ac = AC; if(!ac || !soundOn) return;
+  if(!sfxNoiseBuf){
+    sfxNoiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate*0.5), ac.sampleRate);
+    const d = sfxNoiseBuf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i] = Math.random()*2 - 1;
+  }
+  const s = ac.createBufferSource(), g = ac.createGain(), f = ac.createBiquadFilter();
+  f.type = ftype; f.frequency.setValueAtTime(freq, ac.currentTime);
+  if(slide) f.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), ac.currentTime + dur);
+  g.gain.setValueAtTime(vol, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+  s.buffer = sfxNoiseBuf; s.loop = true;
+  s.connect(f); f.connect(g); g.connect(ac.destination);
+  s.start(); s.stop(ac.currentTime + dur + 0.02);
+}
+
 const sfx = {
-  shot(){ beep(620, .08, 'square', .05, -340); },
-  eshot(){ beep(240, .1, 'sawtooth', .035, -90); },
+  // пушка игрока: у каждого класса свой характер
+  cannon(k){
+    if(k === 'heavy'){        // тяжёлое орудие: глухой мощный удар
+      beep(85, .22, 'sine', .15, -50);
+      noiseBurst(.18, .1, 'lowpass', 900, -700);
+    } else if(k === 'fast'){  // автопушка: лёгкий щелчок
+      beep(340, .06, 'square', .05, -220);
+      noiseBurst(.045, .045, 'highpass', 2600, 1200);
+    } else {                  // универсал: классический танковый выстрел
+      beep(140, .14, 'sine', .11, -90);
+      noiseBurst(.1, .07, 'lowpass', 1400, -1000);
+    }
+  },
+  shot(){ sfx.cannon('uni'); },
+  // вражеские выстрелы по типам
+  eshot(type){
+    if(type === 'sniper'){        // резкий щелчок винтовки
+      noiseBurst(.07, .09, 'highpass', 3200, -1400);
+      beep(900, .16, 'sawtooth', .04, -650);
+    } else if(type === 'heavy'){  // глухой удар тяжёлого
+      beep(110, .16, 'sine', .08, -60);
+      noiseBurst(.12, .06, 'lowpass', 1000, -800);
+    } else if(type === 'scout'){  // лёгкое «пиу»
+      beep(540, .06, 'square', .035, -280);
+    } else if(type === 'mortar'){ // «туумп» миномёта
+      beep(85, .2, 'sine', .1, 95);
+      noiseBurst(.08, .04, 'lowpass', 500, 300);
+    } else if(type === 'boss'){   // залп босса
+      beep(150, .2, 'sawtooth', .07, -85);
+      noiseBurst(.15, .08, 'lowpass', 800, -600);
+    } else {                      // солдат
+      beep(240, .1, 'sawtooth', .035, -90);
+    }
+  },
+  dash(){ noiseBurst(.22, .06, 'lowpass', 380, 1100); }, // рывок босса
+  // супер: многослойный взрыв главного калибра
+  superBoom(){
+    beep(55, .7, 'sine', .16, -27);                 // суб-бас
+    beep(110, .4, 'sawtooth', .08, -70);
+    noiseBurst(.5, .14, 'lowpass', 2200, -1900);    // взрывная волна
+    beep(420, .5, 'triangle', .05, -310);           // металлический звон брони
+    setTimeout(()=> noiseBurst(.3, .06, 'lowpass', 700, -520), 130); // эхо
+  },
   hit(){ beep(180, .12, 'triangle', .09, -120); },
-  boom(){ beep(90, .5, 'sawtooth', .12, -60); beep(55, .6, 'triangle', .1, -25); },
+  boom(){
+    beep(90, .5, 'sawtooth', .12, -60);
+    beep(55, .6, 'triangle', .1, -25);
+    noiseBurst(.28, .07, 'lowpass', 1300, -1100);
+  },
   pickup(){ beep(520, .09, 'sine', .08, 260); beep(780, .12, 'sine', .07, 200); },
   shieldPop(){ beep(900, .15, 'sine', .07, -500); },
   enrage(){ [160,120,160,120].forEach((f,i)=>setTimeout(()=>beep(f,.18,'sawtooth',.09),i*110)); },
@@ -1242,7 +1306,7 @@ function playerShoot(){
                      vx:Math.cos(ca)*rand(70,130), vy:Math.sin(ca)*rand(70,130) - 40,
                      life:0.45, t:0, r:2, color:'#e8c25a' });
   }
-  sfx.shot();
+  sfx.cannon(profile.tank); // у каждого класса свой голос пушки
   state.shake = Math.min(state.shake + (REDUCED?0:2), 6);
 }
 function enemyShoot(e){
@@ -1251,7 +1315,7 @@ function enemyShoot(e){
   bullets.push({ x:e.x + Math.cos(a)*(e.r+12), y:e.y + Math.sin(a)*(e.r+12),
                  vx:Math.cos(a)*e.bspd, vy:Math.sin(a)*e.bspd, from:'e', dmg:e.dmg, r:e.br });
   flash(e.x + Math.cos(a)*(e.r+14), e.y + Math.sin(a)*(e.r+14), a);
-  sfx.eshot();
+  sfx.eshot(e.type);
 }
 function bossShoot(b){
   b.pattern = (b.pattern + 1) % 4;
@@ -1275,7 +1339,7 @@ function bossShoot(b){
     }
   }
   flash(b.x + Math.cos(base)*(b.r+16), b.y + Math.sin(base)*(b.r+16), base);
-  sfx.eshot();
+  sfx.eshot('boss');
 }
 
 // общие пути смерти врага/дрона: очки, дроп, заряд супера, проверка волны
@@ -1315,7 +1379,7 @@ function useSuper(){
   if(state.mode !== 'play' || player.superCharge < 1) return;
   player.superCharge = 0;
   const R = 360;
-  sfx.boom(); sfx.shieldPop(); vibrate(220);
+  sfx.superBoom(); vibrate(220);
   state.shake = Math.min(state.shake + (REDUCED?0:10), 14);
   if(!REDUCED){
     for(let i=0;i<3;i++)
@@ -1585,7 +1649,7 @@ function update(dt){
         if(d < 900){
           bombs.push({ x: player.x + rand(-34,34), y: player.y + rand(-34,34), t:0, fuse:1.35, r:52, dmg:e.dmg });
           flash(e.x + Math.cos(e.turret)*(e.r+14), e.y + Math.sin(e.turret)*(e.r+14), e.turret);
-          sfx.eshot();
+          sfx.eshot('mortar');
           e.fireT = rand(e.fireMin, e.fireMax);
         } else e.fireT = 0.4;
       } else if(d < (e.type === 'sniper' ? 950 : 560)){
@@ -1621,7 +1685,7 @@ function update(dt){
           boss.dashing = 0.55;
           boss.dashA = angTo(boss.x, boss.y, player.x, player.y);
           boss.dashT = boss.enraged ? 3.5 : 5.5;
-          sfx.eshot();
+          sfx.dash();
         }
         if(boss.dashing > 0){
           boss.dashing -= dt;
@@ -1680,7 +1744,7 @@ function update(dt){
     d.dropT -= dt;
     if(d.dropT <= 0 && dd < 280){
       bombs.push({ x:d.x, y:d.y, t:0, fuse:1.15, r:58, dmg:d.dmg });
-      sfx.eshot();
+      sfx.eshot('mortar');
       d.dropT = rand(2.4, 3.4);
     }
   }

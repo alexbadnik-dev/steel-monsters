@@ -269,7 +269,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v42';
+const GAME_VERSION = 'v43';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -363,6 +363,13 @@ const SKINS = [
   { id:'poseidon',name:'Посейдон',    cost:1200, hull:'#2e8a6e', dark:'#14503e', fx:{ pattern:'waves', turretColor:'#f6d32d' } },
   { id:'lantern', name:'Фонарь',      cost:1300, hull:'#2faa4a', dark:'#0e4a1e', fx:{ pattern:'reactor', glow:'#58ff8a', eyeColor:'#b8ffcc', reactorColor:'#8aff9f', reactorCore:'#e8ffee' } },
   { id:'nightcar',name:'Ночной болид',cost:1600, hull:'#23262e', dark:'#0d0f14', fx:{ body:'racer', eyeColor:'#f6d32d' } },
+  // по русским сказкам — наше, родное, и никаких авторских прав
+  { id:'kolobok', name:'Колобок',    cost:1000, hull:'#f6c82d', dark:'#9c7a10', fx:{ body:'hover', eyeColor:'#2b1b02' } },
+  { id:'bogatyr', name:'Богатырь',   cost:1200, hull:'#9db0bf', dark:'#4e5a6a', fx:{ turretColor:'#f6d32d', barrel:'heavy' } },
+  { id:'yaga',    name:'Баба-яга',   cost:1300, hull:'#5a4632', dark:'#2b2013', fx:{ antenna:true, eyeColor:'#9fff8a', glow:'#6a8f4a' } },
+  { id:'gorynych',name:'Горыныч',    cost:1400, hull:'#3e7a3a', dark:'#1d4a1c', fx:{ pattern:'scales', barrel:'double', eyeColor:'#ff5540' } },
+  { id:'firebird',name:'Жар-птица',  cost:1500, hull:'#ff7b2f', dark:'#8a2f10', fx:{ pattern:'feathers', glow:'#ffb347', sparkle:true } },
+  { id:'emelya',  name:'Емеля',      cost:1700, hull:'#f0ead8', dark:'#8a7a60', fx:{ body:'pech' } },
   { id:'rainbow', name:'Хамелеон',   cost:2000, hull:'#58d97b', dark:'#1f7a40', fx:{ rainbow:true } }
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
@@ -2230,6 +2237,46 @@ function drawTank(t, opts, c){
       c.beginPath();
       c.moveTo(-26*s,-10*s); c.lineTo(2*s,-14*s); c.lineTo(26*s,-5*s); c.lineTo(-26*s,-3*s); c.closePath();
       c.fill();
+    } else if(fx.body === 'pech'){
+      // печь Емели: белёный кирпич, труба с дымком, тлеющая топка на носу
+      c.fillStyle = hullC;
+      rrectC(c, -22*s, -14*s, 44*s, 28*s, 5*s); c.fill();
+      c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
+      rrectC(c, -22*s, -14*s, 44*s, 28*s, 5*s); c.stroke();
+      // кирпичная кладка по бокам
+      c.strokeStyle = darkC; c.lineWidth = 1.2*s;
+      c.globalAlpha = baseA*0.45;
+      for(const yy of [-8, 0, 8]){
+        c.beginPath(); c.moveTo(-22*s, yy*s); c.lineTo(-13*s, yy*s); c.stroke();
+        c.beginPath(); c.moveTo(13*s, yy*s); c.lineTo(22*s, yy*s); c.stroke();
+      }
+      c.beginPath(); c.moveTo(-17.5*s, -14*s); c.lineTo(-17.5*s, 14*s); c.stroke();
+      c.beginPath(); c.moveTo(17.5*s, -14*s); c.lineTo(17.5*s, 14*s); c.stroke();
+      c.globalAlpha = baseA;
+      // топка: тлеющая арка, огонь дышит
+      const fgl = 0.6 + 0.4*Math.sin(state.time*5);
+      c.fillStyle = '#2b1410';
+      c.beginPath(); c.arc(16*s, 0, 6.5*s, -Math.PI/2, Math.PI/2); c.closePath(); c.fill();
+      c.fillStyle = 'rgba(255,140,50,' + (0.45 + 0.4*fgl).toFixed(2) + ')';
+      c.beginPath(); c.arc(16*s, 0, 4.2*s, -Math.PI/2, Math.PI/2); c.closePath(); c.fill();
+      // труба и дымок колечками назад
+      c.fillStyle = darkC;
+      rrectC(c, -19*s, -6*s, 8*s, 12*s, 2*s); c.fill();
+      c.fillStyle = '#1c1512';
+      c.beginPath(); c.ellipse(-15*s, 0, 2.6*s, 4*s, 0, 0, Math.PI*2); c.fill();
+      c.fillStyle = '#cfd6dc';
+      for(let i=0;i<3;i++){
+        const st2 = (state.time*0.7 + i*0.33) % 1;
+        c.globalAlpha = baseA * Math.max(0, 0.5 - st2*0.5);
+        c.beginPath();
+        c.arc((-20 - st2*16)*s, Math.sin(state.time*3 + i*2)*3*s, (2 + st2*3.5)*s, 0, Math.PI*2);
+        c.fill();
+      }
+      c.globalAlpha = baseA;
+      // гжельские завитки на боках
+      c.strokeStyle = '#2d5f8a'; c.lineWidth = 1.6*s; c.lineCap = 'round';
+      c.beginPath(); c.arc(2*s, -9*s, 3*s, 0.3, 4.2); c.stroke();
+      c.beginPath(); c.arc(2*s, 9*s, 3*s, 2.2, 6.1); c.stroke();
     } else {
       c.fillStyle = hullC;
       rrectC(c, -21*s, -13*s, 42*s, 26*s, 6*s); c.fill();
@@ -2341,6 +2388,29 @@ function drawTank(t, opts, c){
           c.quadraticCurveTo(8*s, (py+5)*s, 16*s, py*s);
           c.stroke();
         }
+      } else if(fx.pattern === 'feathers'){
+        // огненные перья жар-птицы с «глазками»
+        c.lineCap = 'round';
+        for(const [off, col] of [[-6,'#ffd84d'],[0,'#ff5540'],[6,'#ffd84d']]){
+          c.strokeStyle = col; c.lineWidth = 3*s;
+          c.beginPath();
+          c.moveTo(-16*s, off*s);
+          c.quadraticCurveTo(0, (off*1.8 - 4)*s, 16*s, off*0.6*s);
+          c.stroke();
+        }
+        c.fillStyle = '#6fd9e8';
+        c.beginPath(); c.arc(13*s, -3.5*s, 1.8*s, 0, Math.PI*2); c.fill();
+        c.beginPath(); c.arc(13*s, 3.5*s, 1.8*s, 0, Math.PI*2); c.fill();
+      } else if(fx.pattern === 'scales'){
+        // чешуя змея
+        c.strokeStyle = 'rgba(8,36,14,0.55)'; c.lineWidth = 1.6*s;
+        for(let row=0; row<4; row++){
+          for(let col2=0; col2<5; col2++){
+            c.beginPath();
+            c.arc((-16 + col2*8 + (row%2)*4)*s, (-9 + row*6)*s, 3.6*s, 0.15*Math.PI, 0.85*Math.PI);
+            c.stroke();
+          }
+        }
       } else if(fx.pattern === 'cracks'){
         c.strokeStyle = fx.glow || '#ff6a3a'; c.lineWidth = 2*s; c.lineCap = 'round';
         c.globalAlpha = baseA * (0.65 + 0.35*Math.sin(state.time*5));
@@ -2350,7 +2420,7 @@ function drawTank(t, opts, c){
       }
       c.restore();
     }
-    if(fx.body !== 'stealth' && fx.body !== 'racer'){
+    if(fx.body !== 'stealth' && fx.body !== 'racer' && fx.body !== 'pech'){
       c.fillStyle = '#ffffff1f';
       rrectC(c, -21*s, -13*s, 42*s, 9*s, 6*s); c.fill();
     }

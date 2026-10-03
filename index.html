@@ -223,7 +223,7 @@ html{height:100%}
   <p>Прошёл все сто волн? Герой! После победы открывается бесконечное ВЫЖИВАНИЕ: тот же бой, враги всё злее, а рейтинг запомнит, докуда ты дополз.</p>
   <p>Сложность: на ХАРДЕ враги в 1.35 раза живучее и бьют в 1.25 раза больнее, зато монеты ×1.5 и каждый пройденный уровень даёт 2 🏆. КОШМАР (HP ×1.8, урон ×1.6, монеты ×2.5, кубки ×3) открывается после прохождения кампании. Волны ВЫЖИВАНИЯ (после 100-й) дают двойные кубки.</p>
   <p>Берегись: снайпер светит красным лазером (увидел точку на броне — уезжай!), камикадзе обнимается со взрывом, миномётчик и дроны бомбят по красным кругам. А медик с крестом лечит своих — такого выбивай первым, нечего.</p>
-  <p>Поле боя — живое: красные бочки взрываются от выстрела (замани врагов и подорви, но сам отойди!), камни крошатся и прикрывают от пуль. В болоте топи вязнут, на вулкане лавовые трещины жгут, в джунглях враги прячутся в зарослях — у каждой земли свой характер.</p>
+  <p>Поле боя — живое: красные бочки взрываются от выстрела (замани врагов и подорви, но сам отойди!), камни крошатся и прикрывают от пуль. В болоте топи вязнут, на вулкане лавовые трещины жгут, в джунглях враги прячутся в зарослях, на снегах и леднике гусеницы скользят, а в пустыне налетают песчаные бури (у врагов в бурю прицелы плывут!) — у каждой земли свой характер.</p>
   <p>⚡ Супер-способность «Ударная волна» заряжается убийствами (жёлтая полоска под здоровьем): сметает все вражеские снаряды и бомбы и бьёт всех вокруг. Активация — <b>Q</b> на компьютере или жёлтая кнопка над огнём на телефоне.</p>
   <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины, классы танков и питомцев: Напарник стреляет по врагам, Ремонтник чинит твой танк.</p>
   <button class="btn gray" id="helpBack">НАЗАД</button>
@@ -271,7 +271,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v49';
+const GAME_VERSION = 'v50';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1187,6 +1187,9 @@ function startWave(n){
     while(dist(bx3, by3, player.x, player.y) < 170 && tr3 < 20);
     barrels.push({ x:bx3, y:by3, fuseT:null });
   }
+  // пустыня: буря придёт в случайный момент волны
+  state.stormT = 0;
+  state.stormNext = biomeIdx(n) === 1 ? rand(6, 14) : 0;
   const surv = n > TOTAL_WAVES; // режим выживания после сотой
   const dTag = profile.diff === 'norm' ? '' : ' · ' + currentDiff().name;
   if(isBossWave(n)){
@@ -1605,7 +1608,8 @@ function beamTick(dt){
 }
 function enemyShoot(e){
   // снайпер бьёт точно по зафиксированному лазером направлению
-  const a = (e.type === 'sniper' && e.lockA != null) ? e.lockA : e.turret + rand(-0.08, 0.08);
+  let a = (e.type === 'sniper' && e.lockA != null) ? e.lockA : e.turret + rand(-0.08, 0.08);
+  if(state.stormT > 0) a += rand(-0.22, 0.22); // в бурю прицелы плывут у всех
   bullets.push({ x:e.x + Math.cos(a)*(e.r+12), y:e.y + Math.sin(a)*(e.r+12),
                  vx:Math.cos(a)*e.bspd, vy:Math.sin(a)*e.bspd, from:'e', dmg:e.dmg, r:e.br });
   flash(e.x + Math.cos(a)*(e.r+14), e.y + Math.sin(a)*(e.r+14), a);
@@ -1800,15 +1804,34 @@ function update(dt){
   if(keys['KeyD']||keys['ArrowRight']) mx += 1;
   if(joy.id !== null){ mx = joy.dx/54; my = joy.dy/54; }
   const mlen = Math.hypot(mx,my);
+  const BIu = biomeIdx(state.wave);
+  const icy = BIu === 2 || BIu === 7; // снега и ледник: гусеницы скользят
   if(mlen > 0.01){
     const nx = mx/Math.max(mlen,1), ny = my/Math.max(mlen,1);
     const tmp = terrainMult(player.x, player.y); // топь вязнет
-    player.x += nx * player.speed * tmp * dt;
-    player.y += ny * player.speed * tmp * dt;
+    if(icy){ // лёд: скорость набирается и гасится плавно
+      const k = Math.min(1, dt*3);
+      player.ivx = (player.ivx || 0) + (nx*player.speed - (player.ivx || 0))*k;
+      player.ivy = (player.ivy || 0) + (ny*player.speed - (player.ivy || 0))*k;
+    } else {
+      player.ivx = nx*player.speed;
+      player.ivy = ny*player.speed;
+    }
+    player.x += player.ivx * tmp * dt;
+    player.y += player.ivy * tmp * dt;
     player.hull = lerpAng(player.hull, Math.atan2(ny,nx), Math.min(1, dt*10));
     player.trackPhase = (player.trackPhase || 0) + player.speed*dt*0.22;
     player.trackT -= dt;
     if(player.trackT <= 0){ leaveTrack(player, 1); player.trackT = 0.07; }
+  } else if(icy && Math.hypot(player.ivx || 0, player.ivy || 0) > 6){
+    // отпустил газ — танк мягко доезжает по льду
+    player.ivx *= Math.max(0, 1 - dt*1.7);
+    player.ivy *= Math.max(0, 1 - dt*1.7);
+    player.x += player.ivx * dt;
+    player.y += player.ivy * dt;
+    player.trackPhase = (player.trackPhase || 0) + Math.hypot(player.ivx, player.ivy)*dt*0.22;
+  } else {
+    player.ivx = 0; player.ivy = 0;
   }
   player.x = Math.max(player.r, Math.min(W-player.r, player.x));
   player.y = Math.max(player.r, Math.min(H-player.r, player.y));
@@ -2109,6 +2132,25 @@ function update(dt){
       d.dropT = rand(2.4, 3.4);
     }
   }
+  // пустыня: в случайный момент волны налетает песчаная буря на 5 секунд
+  if(BIu === 1){
+    if(state.stormT > 0){
+      state.stormT -= dt;
+      state.stormSfx = (state.stormSfx || 0) - dt;
+      if(state.stormSfx <= 0){ noiseBurst(.3, .02, 'lowpass', 600, -200); state.stormSfx = 0.25; }
+    } else if(state.stormNext > 0){
+      state.stormNext -= dt;
+      if(state.stormNext <= 0){
+        state.stormT = 5;
+        state.stormNext = rand(14, 22);
+        waveBanner = { text: '🌪 ПЕСЧАНАЯ БУРЯ!', t: 1.8 };
+        noiseBurst(.6, .05, 'lowpass', 500, -300);
+      }
+    }
+  } else {
+    state.stormT = 0;
+  }
+
   // вулкан: лавовые трещины жгут всех, кто на них стоит
   if(biomeIdx(state.wave) === 9){
     const onLava = (x, y) => {
@@ -2277,6 +2319,7 @@ function update(dt){
   if(player.rapidT > 0) fx.push('Скорострел ' + Math.ceil(player.rapidT));
   if(player.tripleT > 0) fx.push('Тройной ' + Math.ceil(player.tripleT));
   if(player.beamT > 0) fx.push('🔆 ЛУЧ ' + Math.ceil(player.beamT));
+  if(state.stormT > 0) fx.push('🌪 Буря ' + Math.ceil(state.stormT));
   $('fxtext').textContent = fx.join(' · ');
 }
 
@@ -3236,12 +3279,13 @@ function render(){
 
   // tanks
   if(state.mode === 'play' || state.mode === 'pause' || state.mode === 'menu'){
-    // джунгли: враги прячутся в зарослях и проявляются вблизи
-    const jungle = biomeIdx(state.wave) === 5 && state.mode !== 'menu';
+    // джунгли прячут врагов в зарослях, песчаная буря — за пеленой
+    const BIr = biomeIdx(state.wave);
+    const hideFar = state.mode !== 'menu' && (BIr === 5 || (BIr === 1 && state.stormT > 0));
     for(const e of enemies){
       const T = ETYPES[e.type];
       let efx = T.fx;
-      if(jungle){
+      if(hideFar){
         const dj = dist(player.x, player.y, e.x, e.y);
         const al = Math.max(0.15, Math.min(1, (380 - dj)/150));
         if(al < 1) efx = Object.assign({}, T.fx, { alpha: al });
@@ -3427,13 +3471,22 @@ function render(){
   if(!REDUCED && state.mode !== 'menu'){
     const t2 = state.time;
     const rnd2 = i => { const v = Math.sin(i*113.13 + 3.7)*43758.5453; return v - Math.floor(v); };
-    if(BI === 1 || BI === 4){ // песчаная/пыльная позёмка
-      ctx.strokeStyle = BI === 1 ? 'rgba(216,194,122,0.22)' : 'rgba(170,130,100,0.18)';
-      ctx.lineWidth = 1.5; ctx.lineCap = 'round';
-      for(let i=0;i<10;i++){
+    if(BI === 1 || BI === 4){ // песчаная/пыльная позёмка; в бурю — стена песка
+      const storm = BI === 1 && state.stormT > 0;
+      const sk2 = storm ? Math.min(1, state.stormT, 5 - state.stormT + 1) : 0; // плавный вход/выход
+      if(storm){
+        ctx.fillStyle = 'rgba(216,194,122,' + (0.14*sk2).toFixed(3) + ')';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = 'rgba(150,126,80,' + (0.1*sk2).toFixed(3) + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+      ctx.strokeStyle = BI === 1 ? 'rgba(216,194,122,' + (storm ? 0.5 : 0.22) + ')' : 'rgba(170,130,100,0.18)';
+      ctx.lineWidth = storm ? 2.2 : 1.5; ctx.lineCap = 'round';
+      const nStreak = storm ? 34 : 10, spd2 = storm ? 420 : 140, len2 = storm ? 52 : 26;
+      for(let i=0;i<nStreak;i++){
         const yy = rnd2(i)*H;
-        const xx = ((t2*(140 + rnd2(i+30)*120) + rnd2(i+60)*W) % (W + 80)) - 40;
-        ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx - 26, yy + 3); ctx.stroke();
+        const xx = ((t2*(spd2 + rnd2(i+30)*120) + rnd2(i+60)*W) % (W + 80)) - 40;
+        ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx - len2, yy + 4); ctx.stroke();
       }
     } else if(BI === 2 || BI === 7){ // снегопад
       ctx.fillStyle = '#f0f8ff';

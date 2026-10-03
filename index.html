@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v37';
+const GAME_VERSION = 'v38';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -262,7 +262,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const $ = id => document.getElementById(id);
 
 let W = 0, H = 0, DPR = 1;
-let decor = [], vig = null;
+let decor = [], vig = null, cLight = null;
 function makeScenery(){
   decor = [];
   const n = Math.round(W*H/36000);
@@ -270,10 +270,20 @@ function makeScenery(){
     const r = Math.random();
     decor.push({
       x: Math.random()*(W-40)+20, y: Math.random()*(H-40)+20,
-      kind: r<0.38 ? 'crater' : r<0.74 ? 'bush' : 'rock',
+      // spec — фирменный декор биома (кактус, льдина, кристалл...)
+      kind: r<0.3 ? 'crater' : r<0.58 ? 'bush' : r<0.78 ? 'rock' : 'spec',
       s: 0.7+Math.random()*0.7, a: Math.random()*Math.PI*2
     });
   }
+  // мягкий свет в центре поля — объём вместо плоской заливки
+  cLight = document.createElement('canvas');
+  cLight.width = Math.max(2, Math.round(W/4)); cLight.height = Math.max(2, Math.round(H/4));
+  const lc = cLight.getContext('2d');
+  const lg = lc.createRadialGradient(cLight.width/2, cLight.height/2, 4,
+                                     cLight.width/2, cLight.height/2, Math.max(cLight.width, cLight.height)*0.6);
+  lg.addColorStop(0, 'rgba(255,255,255,0.07)');
+  lg.addColorStop(1, 'rgba(255,255,255,0)');
+  lc.fillStyle = lg; lc.fillRect(0, 0, cLight.width, cLight.height);
   vig = document.createElement('canvas');
   vig.width = Math.max(2, Math.round(W/4)); vig.height = Math.max(2, Math.round(H/4));
   const vc = vig.getContext('2d');
@@ -329,6 +339,14 @@ const SKINS = [
   { id:'neon',    name:'Неон',       cost:1100, hull:'#1c2228', dark:'#0e1216', fx:{ glow:'#2de0ff', eyeColor:'#2de0ff' } },
   { id:'ufo',     name:'НЛО',        cost:1200, hull:'#7ee0d2', dark:'#2d7a6e', fx:{ body:'hover', glow:'#7ee0d2' } },
   { id:'gold',    name:'Золотой',    cost:1500, hull:'#f6d32d', dark:'#8a6d08', fx:{ sparkle:true, glow:'#ffd84d', barrel:'heavy' } },
+  // герои (вдохновлено другой известной вселенной)
+  { id:'speed',   name:'Спидстер',    cost:1000, hull:'#d8252a', dark:'#7a1115', fx:{ pattern:'bolt', turretColor:'#f6c82d', glow:'#ffd84d' } },
+  { id:'jester',  name:'Шут',         cost:1000, hull:'#7a3a9c', dark:'#2e6b32', fx:{ pattern:'checker', turretColor:'#4ec46a', eyeColor:'#ff5540' } },
+  { id:'super',   name:'Сверхтанк',   cost:1100, hull:'#2766c8', dark:'#16304a', fx:{ pattern:'diamond', turretColor:'#c0392b' } },
+  { id:'amazon',  name:'Амазонка',    cost:1100, hull:'#b3202a', dark:'#6e1118', fx:{ pattern:'star', turretColor:'#2d5f8a', eyeColor:'#ffd84d' } },
+  { id:'poseidon',name:'Посейдон',    cost:1200, hull:'#2e8a6e', dark:'#14503e', fx:{ pattern:'waves', turretColor:'#f6d32d' } },
+  { id:'lantern', name:'Фонарь',      cost:1300, hull:'#2faa4a', dark:'#0e4a1e', fx:{ pattern:'reactor', glow:'#58ff8a', eyeColor:'#b8ffcc', reactorColor:'#8aff9f', reactorCore:'#e8ffee' } },
+  { id:'nightcar',name:'Ночной болид',cost:1600, hull:'#23262e', dark:'#0d0f14', fx:{ body:'racer', eyeColor:'#f6d32d' } },
   { id:'rainbow', name:'Хамелеон',   cost:2000, hull:'#58d97b', dark:'#1f7a40', fx:{ rainbow:true } }
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
@@ -2172,6 +2190,28 @@ function drawTank(t, opts, c){
       c.beginPath();
       c.moveTo(-21*s,-9*s); c.lineTo(-8*s,-14*s); c.lineTo(15*s,-12*s); c.lineTo(23*s,0); c.lineTo(-21*s,0); c.closePath();
       c.fill();
+    } else if(fx.body === 'racer'){
+      // низкий гоночный болид: клин-нос, задние плавники, живое пламя из сопла
+      const jf = 0.6 + 0.4*Math.sin(state.time*22);
+      c.fillStyle = '#ff9f43';
+      c.globalAlpha = baseA * (0.5 + 0.3*jf);
+      c.beginPath(); c.ellipse((-30 - 5*jf)*s, 0, (5 + 3.5*jf)*s, 3.2*s, 0, 0, Math.PI*2); c.fill();
+      c.globalAlpha = baseA;
+      c.fillStyle = darkC; // задние плавники
+      c.beginPath(); c.moveTo(-24*s,-9*s); c.lineTo(-34*s,-14*s); c.lineTo(-22*s,-3*s); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(-24*s,9*s); c.lineTo(-34*s,14*s); c.lineTo(-22*s,3*s); c.closePath(); c.fill();
+      c.fillStyle = hullC;
+      c.beginPath();
+      c.moveTo(-26*s,-10*s); c.lineTo(2*s,-14*s); c.lineTo(26*s,-5*s); c.lineTo(31*s,0);
+      c.lineTo(26*s,5*s); c.lineTo(2*s,14*s); c.lineTo(-26*s,10*s); c.closePath();
+      c.fill();
+      c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = Math.max(1.5, 2*s); c.stroke();
+      c.fillStyle = '#2a2f36'; // сопло
+      c.beginPath(); c.arc(-26*s, 0, 3.4*s, 0, Math.PI*2); c.fill();
+      c.fillStyle = '#ffffff1a'; // блик по носу
+      c.beginPath();
+      c.moveTo(-26*s,-10*s); c.lineTo(2*s,-14*s); c.lineTo(26*s,-5*s); c.lineTo(-26*s,-3*s); c.closePath();
+      c.fill();
     } else {
       c.fillStyle = hullC;
       rrectC(c, -21*s, -13*s, 42*s, 26*s, 6*s); c.fill();
@@ -2221,10 +2261,10 @@ function drawTank(t, opts, c){
         c.fillRect(-21*s, -4*s, 8*s, 8*s);
         c.fillRect(13*s, -4*s, 8*s, 8*s);
         c.globalAlpha = baseA * (0.65 + 0.35*Math.sin(state.time*5));
-        c.strokeStyle = '#8fe0f5'; c.lineWidth = 2.5*s;
+        c.strokeStyle = fx.reactorColor || '#8fe0f5'; c.lineWidth = 2.5*s;
         c.beginPath(); c.arc(-2*s, 0, 6.5*s, 0, Math.PI*2); c.stroke();
         c.globalAlpha = baseA;
-        c.fillStyle = '#d6f4ff';
+        c.fillStyle = fx.reactorCore || '#d6f4ff';
         c.beginPath(); c.arc(-2*s, 0, 4*s, 0, Math.PI*2); c.fill();
       } else if(fx.pattern === 'web'){
         // паутина на корпусе
@@ -2267,6 +2307,22 @@ function drawTank(t, opts, c){
           c.quadraticCurveTo((2+off)*s, 0, (-4+off)*s, 12*s);
           c.stroke();
         }
+      } else if(fx.pattern === 'diamond'){
+        // жёлто-красный ромб-эмблема на носу (чтобы не прятался под башней)
+        c.fillStyle = '#f6d32d';
+        c.beginPath(); c.moveTo(14*s,-8*s); c.lineTo(21*s,0); c.lineTo(14*s,8*s); c.lineTo(7*s,0); c.closePath(); c.fill();
+        c.fillStyle = '#c0392b';
+        c.beginPath(); c.moveTo(14*s,-4.8*s); c.lineTo(18.2*s,0); c.lineTo(14*s,4.8*s); c.lineTo(9.8*s,0); c.closePath(); c.fill();
+      } else if(fx.pattern === 'waves'){
+        // морские волны по корпусу
+        c.strokeStyle = 'rgba(214,244,255,0.55)'; c.lineWidth = 2.2*s; c.lineCap = 'round';
+        for(const py of [-7, 0, 7]){
+          c.beginPath();
+          c.moveTo(-16*s, py*s);
+          c.quadraticCurveTo(-8*s, (py-5)*s, 0, py*s);
+          c.quadraticCurveTo(8*s, (py+5)*s, 16*s, py*s);
+          c.stroke();
+        }
       } else if(fx.pattern === 'cracks'){
         c.strokeStyle = fx.glow || '#ff6a3a'; c.lineWidth = 2*s; c.lineCap = 'round';
         c.globalAlpha = baseA * (0.65 + 0.35*Math.sin(state.time*5));
@@ -2276,7 +2332,7 @@ function drawTank(t, opts, c){
       }
       c.restore();
     }
-    if(fx.body !== 'stealth'){
+    if(fx.body !== 'stealth' && fx.body !== 'racer'){
       c.fillStyle = '#ffffff1f';
       rrectC(c, -21*s, -13*s, 42*s, 9*s, 6*s); c.fill();
     }
@@ -2655,11 +2711,13 @@ function render(){
     const px = (i*197.3) % W, py = (i*149.7 + 80) % H;
     ctx.beginPath(); ctx.ellipse(px, py, 46, 30, i, 0, Math.PI*2); ctx.fill();
   }
+  if(cLight) ctx.drawImage(cLight, 0, 0, W, H); // свет в центре поля
+  const BI = BIOMES.indexOf(B);
 
   // scenery
   for(const d of decor){
     ctx.save();
-    ctx.translate(d.x, d.y); ctx.rotate(d.a); ctx.scale(d.s, d.s);
+    ctx.translate(d.x, d.y); ctx.rotate(d.kind === 'spec' ? 0 : d.a); ctx.scale(d.s, d.s);
     if(d.kind === 'crater'){
       ctx.fillStyle = B.crater[0];
       ctx.beginPath(); ctx.ellipse(0, 0, 20, 14, 0, 0, Math.PI*2); ctx.fill();
@@ -2675,6 +2733,108 @@ function render(){
       ctx.fillStyle = B.bush[1];
       for(const [bx,by,br] of [[-6,-2,7],[5,-5,6],[2,3,7]]){
         ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI*2); ctx.fill();
+      }
+    } else if(d.kind === 'spec'){
+      // фирменная деталь биома
+      if(BI === 0){ // степь: пучки травы
+        ctx.strokeStyle = B.bush[1]; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+        for(let i=-2;i<=2;i++){
+          ctx.beginPath(); ctx.moveTo(i*2.4, 6);
+          ctx.quadraticCurveTo(i*3.4, -2, i*4.6, -9 - Math.abs(i));
+          ctx.stroke();
+        }
+      } else if(BI === 1){ // пустыня: кактус
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath(); ctx.ellipse(2, 10, 10, 4, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#3e7a3a';
+        rrect(-3.5, -14, 7, 24, 3.5); ctx.fill();
+        rrect(-12, -8, 6, 10, 3); ctx.fill();
+        ctx.fillRect(-9, -3, 7, 4.5);
+        rrect(6, -12, 6, 9, 3); ctx.fill();
+        ctx.fillRect(3, -8, 5, 4.5);
+        ctx.fillStyle = '#58a04a';
+        rrect(-2, -13, 2.4, 22, 1.2); ctx.fill();
+      } else if(BI === 2){ // снега: ёлочка в снегу
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.beginPath(); ctx.ellipse(2, 12, 11, 4, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#2f5a44';
+        for(const [w2,y2] of [[12,10],[9.5,3],[7,-4]]){
+          ctx.beginPath(); ctx.moveTo(0, y2-10); ctx.lineTo(w2, y2); ctx.lineTo(-w2, y2); ctx.closePath(); ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(240,248,255,0.85)';
+        for(const [w2,y2] of [[11,9.4],[8.6,2.4],[6.2,-4.5]]){
+          ctx.beginPath(); ctx.moveTo(0, y2-9); ctx.lineTo(w2, y2); ctx.lineTo(-w2*0.45, y2-1); ctx.closePath(); ctx.fill();
+        }
+      } else if(BI === 3){ // болото: топь с камышом
+        ctx.fillStyle = '#131f16';
+        ctx.beginPath(); ctx.ellipse(0, 2, 16, 9, 0, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = 'rgba(190,220,210,0.25)'; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.ellipse(-3, 0, 9, 4, 0.3, 0.6, 2.4); ctx.stroke();
+        ctx.strokeStyle = '#3e6636'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(8, 4); ctx.lineTo(10, -12); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(12, 5); ctx.lineTo(15, -8); ctx.stroke();
+        ctx.fillStyle = '#6b4a2e';
+        rrect(9, -16, 2.6, 6, 1.3); ctx.fill();
+        rrect(14, -12, 2.4, 5, 1.2); ctx.fill();
+      } else if(BI === 4){ // ржавые земли: балка с заклёпками
+        ctx.rotate(d.a);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        rrect(-14, -2, 30, 8, 2); ctx.fill();
+        ctx.fillStyle = '#6a4a3a';
+        rrect(-15, -5, 30, 8, 2); ctx.fill();
+        ctx.fillStyle = '#80594a';
+        rrect(-15, -5, 30, 3.4, 2); ctx.fill();
+        ctx.fillStyle = '#3a2820';
+        for(const px of [-10,-3,4,11]){ ctx.beginPath(); ctx.arc(px, -1, 1.3, 0, Math.PI*2); ctx.fill(); }
+      } else if(BI === 5){ // джунгли: папоротник
+        for(const [col,lw,len] of [['#2c5c33',2.2,17],['#58a04a',1.3,13]]){
+          ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+          for(let i=0;i<5;i++){
+            const a2 = -Math.PI/2 + (i-2)*0.55;
+            ctx.beginPath(); ctx.moveTo(0, 4);
+            ctx.quadraticCurveTo(Math.cos(a2)*len*0.6, 4 + Math.sin(a2)*len*0.6, Math.cos(a2)*len, 4 + Math.sin(a2)*len);
+            ctx.stroke();
+          }
+        }
+      } else if(BI === 6){ // пепелище: тлеющий пень
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath(); ctx.ellipse(1, 6, 8, 3.4, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#1e1c22';
+        rrect(-4, -12, 8, 17, 2); ctx.fill();
+        ctx.fillStyle = '#2e2a33';
+        ctx.beginPath(); ctx.ellipse(0, -12, 4, 1.8, 0, 0, Math.PI*2); ctx.fill();
+        const gp6 = 0.5 + 0.5*Math.sin(state.time*3 + d.x);
+        ctx.fillStyle = 'rgba(255,120,50,' + (0.25 + 0.45*gp6).toFixed(2) + ')';
+        ctx.beginPath(); ctx.arc(2, -4, 1.6, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(-2, 1, 1.2, 0, Math.PI*2); ctx.fill();
+      } else if(BI === 7){ // ледник: льдина с трещиной
+        ctx.rotate(d.a);
+        ctx.fillStyle = '#6ea2bc';
+        ctx.beginPath();
+        ctx.moveTo(-14,2); ctx.lineTo(-8,-8); ctx.lineTo(6,-10); ctx.lineTo(14,-2); ctx.lineTo(10,7); ctx.lineTo(-4,9);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#9fc9dd';
+        ctx.beginPath();
+        ctx.moveTo(-8,-6); ctx.lineTo(5,-8); ctx.lineTo(11,-2); ctx.lineTo(-6,0);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(20,50,70,0.5)'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(-6,0); ctx.lineTo(2,-3); ctx.lineTo(9,2); ctx.stroke();
+      } else if(BI === 8){ // сумрак: светящийся кристалл
+        const gp8 = 0.5 + 0.5*Math.sin(state.time*2.4 + d.y);
+        ctx.fillStyle = '#3a3252';
+        ctx.beginPath(); ctx.moveTo(7,-6); ctx.lineTo(10.5,0.6); ctx.lineTo(7,4); ctx.lineTo(3.8,0.6); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#554a70';
+        ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(6,-2); ctx.lineTo(0,4); ctx.lineTo(-6,-2); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(200,155,255,' + (0.3 + 0.4*gp8).toFixed(2) + ')';
+        ctx.beginPath(); ctx.moveTo(0,-12); ctx.lineTo(4,-2.4); ctx.lineTo(0,2.4); ctx.lineTo(-4,-2.4); ctx.closePath(); ctx.fill();
+      } else { // вулкан: светящаяся лавовая трещина
+        ctx.rotate(d.a);
+        const gp9 = 0.6 + 0.4*Math.sin(state.time*4 + d.x*0.1);
+        ctx.strokeStyle = '#1c0e0a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-16,2); ctx.lineTo(-6,-2); ctx.lineTo(2,3); ctx.lineTo(12,-3); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,110,50,' + (0.5 + 0.4*gp9).toFixed(2) + ')';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.moveTo(-16,2); ctx.lineTo(-6,-2); ctx.lineTo(2,3); ctx.lineTo(12,-3); ctx.stroke();
       }
     } else {
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -2918,6 +3078,65 @@ function render(){
     ctx.fillText(f.txt, f.x, f.y);
   }
   ctx.globalAlpha = 1;
+
+  // погода биома: снег, песок, светлячки, пепел, угольки, дымка
+  if(!REDUCED && state.mode !== 'menu'){
+    const t2 = state.time;
+    const rnd2 = i => { const v = Math.sin(i*113.13 + 3.7)*43758.5453; return v - Math.floor(v); };
+    if(BI === 1 || BI === 4){ // песчаная/пыльная позёмка
+      ctx.strokeStyle = BI === 1 ? 'rgba(216,194,122,0.22)' : 'rgba(170,130,100,0.18)';
+      ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+      for(let i=0;i<10;i++){
+        const yy = rnd2(i)*H;
+        const xx = ((t2*(140 + rnd2(i+30)*120) + rnd2(i+60)*W) % (W + 80)) - 40;
+        ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx - 26, yy + 3); ctx.stroke();
+      }
+    } else if(BI === 2 || BI === 7){ // снегопад
+      ctx.fillStyle = '#f0f8ff';
+      for(let i=0;i<16;i++){
+        const yy = ((t2*(24 + rnd2(i)*30) + rnd2(i+40)*H) % (H + 20)) - 10;
+        const xx = ((rnd2(i+80)*W + Math.sin(t2*0.8 + i)*30 + t2*12) % W + W) % W;
+        ctx.globalAlpha = 0.3 + 0.45*rnd2(i+120);
+        ctx.beginPath(); ctx.arc(xx, yy, 1.3 + rnd2(i+160)*1.3, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if(BI === 5 || BI === 8){ // светлячки / искры сумрака
+      ctx.fillStyle = BI === 5 ? '#b8ff8a' : '#c89bff';
+      for(let i=0;i<9;i++){
+        const xx = rnd2(i)*W + Math.sin(t2*(0.5 + rnd2(i+9)) + i*2)*40;
+        const yy = rnd2(i+18)*H + Math.cos(t2*(0.4 + rnd2(i+27)) + i)*30;
+        ctx.globalAlpha = 0.2 + 0.5*Math.max(0, Math.sin(t2*2.2 + i*1.9));
+        ctx.beginPath(); ctx.arc(xx, yy, 1.8, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if(BI === 6){ // хлопья пепла
+      ctx.fillStyle = '#bebec8';
+      for(let i=0;i<12;i++){
+        const yy = ((t2*(14 + rnd2(i)*14) + rnd2(i+40)*H) % (H + 20)) - 10;
+        const xx = ((rnd2(i+80)*W + Math.sin(t2*0.6 + i*1.3)*44) % W + W) % W;
+        ctx.globalAlpha = 0.18 + 0.3*rnd2(i+120);
+        ctx.fillRect(xx, yy, 2.4, 2.4);
+      }
+      ctx.globalAlpha = 1;
+    } else if(BI === 9){ // угольки вулкана поднимаются
+      ctx.fillStyle = '#ff9f43';
+      for(let i=0;i<10;i++){
+        const yy = H - ((t2*(30 + rnd2(i)*40) + rnd2(i+40)*H) % (H + 20));
+        const xx = ((rnd2(i+80)*W + Math.sin(t2 + i*2)*24) % W + W) % W;
+        ctx.globalAlpha = 0.3 + 0.4*rnd2(i+120);
+        ctx.beginPath(); ctx.arc(xx, yy, 1.5, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if(BI === 3){ // болотная дымка стелется
+      ctx.fillStyle = '#9fb4c8';
+      for(let i=0;i<4;i++){
+        const xx = ((t2*(6 + i*3) + rnd2(i)*W) % (W + 360)) - 180;
+        ctx.globalAlpha = 0.035 + 0.015*i;
+        ctx.beginPath(); ctx.ellipse(xx, rnd2(i+7)*H, 190, 26, 0, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
 
   ctx.restore();
 

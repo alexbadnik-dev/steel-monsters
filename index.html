@@ -252,6 +252,7 @@ html{height:100%}
   <p class="record" id="losePlace"></p>
   <p class="classdesc netstat"></p>
   <p>Танк отправлен в ремонт. Попробуй ещё раз!</p>
+  <button class="btn small" id="adCoinsBtn" hidden>🎬 МОНЕТЫ ×2</button>
   <button class="btn" id="retryBtn">ЕЩЁ РАЗ</button>
   <button class="btn gray" id="retryStartBtn" hidden>С ПЕРВОЙ ВОЛНЫ</button>
   <button class="btn gray small" id="loseMenuBtn">В МЕНЮ</button>
@@ -265,6 +266,7 @@ html{height:100%}
   <p class="classdesc netstat"></p>
   <p>Сто волн, десять генералов — всё в утиль. Можно и компот.</p>
   <p>…а можно остаться в этом же бою на бесконечное выживание: волны всё злее, боссы идут по второму кругу. До какой дотянешь?</p>
+  <button class="btn small" id="adCoinsBtnW" hidden>🎬 МОНЕТЫ ×2</button>
   <button class="btn" id="winSurviveBtn">ВЫЖИВАНИЕ ∞</button>
   <button class="btn gray" id="winBtn">ИГРАТЬ СНОВА</button>
   <button class="btn gray small" id="winMenuBtn">В МЕНЮ</button>
@@ -273,12 +275,63 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v53';
+const GAME_VERSION = 'v54';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+// ---------- платформа: web / Яндекс Игры / VK (Mail) ----------
+const PLATFORM = (() => {
+  try{
+    const q = new URLSearchParams(location.search).get('platform');
+    if(q === 'yandex' || /yandex|games\.s3\./.test(location.hostname)) return 'yandex';
+    if(q === 'vk' || /vk-apps|vkplay|vk\.com/.test(location.hostname)) return 'vk';
+  }catch(e){}
+  return 'web';
+})();
+// единый интерфейс рекламы: на вебе рекламы нет — кнопки просто скрыты
+const platformAds = {
+  ready: false,
+  rewarded(cb){ cb(false); }
+};
+(function initPlatform(){
+  if(PLATFORM === 'yandex'){
+    const s = document.createElement('script');
+    s.src = 'https://yandex.ru/games/sdk/v2';
+    s.onload = () => {
+      YaGames.init().then(ysdk => {
+        platformAds.ready = true;
+        platformAds.rewarded = cb => {
+          let got = false;
+          ysdk.adv.showRewardedVideo({ callbacks: {
+            onRewarded: () => { got = true; },
+            onClose: () => cb(got),
+            onError: () => cb(false)
+          }});
+        };
+        try{ ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); }catch(e){}
+      }).catch(()=>{});
+    };
+    document.head.appendChild(s);
+  } else if(PLATFORM === 'vk'){
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js';
+    s.onload = () => {
+      try{
+        vkBridge.send('VKWebAppInit');
+        platformAds.ready = true;
+        platformAds.rewarded = cb => {
+          vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })
+            .then(d => cb(!!(d && d.result)))
+            .catch(() => cb(false));
+        };
+      }catch(e){}
+    };
+    document.head.appendChild(s);
+  }
+})();
 const $ = id => document.getElementById(id);
 
 let W = 0, H = 0, DPR = 1;
@@ -496,15 +549,21 @@ const ONLINE = {
 function onlineEnabled(){ return !!(ONLINE.url && ONLINE.key); }
 async function submitOnline(e){
   if(!onlineEnabled()) return false;
-  try{
-    const r = await fetch(ONLINE.url + '/rest/v1/scores', {
-      method: 'POST',
-      headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key,
-                 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify({ name: e.name, score: e.score, wave: e.wave, tank: e.tank, diff: e.diff, cups: e.cups })
-    });
-    return r.ok;
-  }catch(err){ return false; }
+  const post = async body => {
+    try{
+      const r = await fetch(ONLINE.url + '/rest/v1/scores', {
+        method: 'POST',
+        headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key,
+                   'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify(body)
+      });
+      return r.status;
+    }catch(err){ return 0; }
+  };
+  const base = { name: e.name, score: e.score, wave: e.wave, tank: e.tank, diff: e.diff, cups: e.cups };
+  let st = await post(e.secs ? Object.assign({ secs: e.secs }, base) : base);
+  if(st === 400 && e.secs) st = await post(base); // в таблице ещё нет колонки secs
+  return st >= 200 && st < 300;
 }
 // очередь недоставленных результатов: дошлём, когда появится сеть
 let outbox = [];
@@ -533,20 +592,25 @@ function setNetStat(text){
 async function fetchOnline(){
   if(!onlineEnabled()) return null;
   try{
-    const r = await fetch(ONLINE.url + '/rest/v1/scores?select=name,score,wave,tank,diff,cups&order=cups.desc,score.desc&limit=100',
-      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } });
-    if(!r.ok) return null;
-    return await r.json();
+    // сперва пробуем с колонкой времени; если её ещё нет в таблице — без неё
+    for(const sel of ['name,score,wave,tank,diff,cups,secs', 'name,score,wave,tank,diff,cups']){
+      const r = await fetch(ONLINE.url + '/rest/v1/scores?select=' + sel + '&order=cups.desc,score.desc&limit=100',
+        { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } });
+      if(r.ok) return await r.json();
+    }
+    return null;
   }catch(err){ return null; }
 }
 
+function fmtTime(s){ s = Math.max(0, Math.round(s || 0)); return Math.floor(s/60) + ':' + String(s % 60).padStart(2, '0'); }
 // кубки: 1 волна = 1 🏆 (на Харде ×2, на Кошмаре ×3); сортируем по кубкам.
 // Выживание ценится выше: каждая волна после 100-й даёт двойные кубки.
 function cupsOf(r){ return (r.cups|0) || (r.wave|0); } // старые записи — 1 кубок за волну
 function cupWaves(wave){ return Math.min(wave, TOTAL_WAVES) + Math.max(0, wave - TOTAL_WAVES)*2; }
-function submitScore(name, score, wave, tank, diff){
+function submitScore(name, score, wave, tank, diff, secs){
   const mult = (DIFFS[diff] || DIFFS.norm).cups;
-  const entry = { name, score, wave, tank: tank || 'uni', diff: diff || 'norm', cups: cupWaves(wave) * mult, ts: Date.now() };
+  const entry = { name, score, wave, tank: tank || 'uni', diff: diff || 'norm',
+                  cups: cupWaves(wave) * mult, secs: Math.round(secs || 0), ts: Date.now() };
   if(onlineEnabled()){
     setNetStat('🌍 Отправка результата...');
     pushScore(entry).then(ok => setNetStat(ok
@@ -1294,6 +1358,7 @@ function resetGame(wave, score, hp){
   }
   pet.x = player.x - 50; pet.y = player.y; pet.cd = 0; pet.t = 0;
   state.score = score ?? 0; state.shake = 0; state.freezeT = 0; state.magnetT = 0; state.awardedFor = 0;
+  state.playT = 0;
   $('bossbarwrap').hidden = true;
   startWave(wave ?? 1);
 }
@@ -1397,19 +1462,27 @@ function endGame(win){
   profile.coins += earned;
   profile.bestWave = Math.max(profile.bestWave|0, state.wave);
   saveProfile();
-  const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave, profile.tank, profile.diff);
+  const secs = Math.round(state.playT || 0);
+  const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave, profile.tank, profile.diff, secs);
   const info = '+' + earned + ' 🪙' + (place ? ' · Место в рейтинге: ' + place : '');
   $(win ? 'winPlace' : 'losePlace').textContent = info;
+  // ×2 монет за рекламу — только на площадках с рекламой
+  state.lastEarned = earned;
+  const adBtn = $(win ? 'adCoinsBtnW' : 'adCoinsBtn');
+  adBtn.hidden = !(platformAds.ready && earned > 0);
+  adBtn.disabled = false;
+  adBtn.textContent = '🎬 МОНЕТЫ ×2 (+' + earned + ')';
   voice.say(win ? 'Победа. Империя пала.' : 'Танк уничтожен');
   if(win){
     sfx.win(); vibrate(200);
-    $('winScore').textContent = 'Счёт: ' + state.score;
+    $('winScore').textContent = 'Счёт: ' + state.score + ' · ⏱ ' + fmtTime(secs);
     $('winBest').textContent = rec;
     setOverlay('victory');
   } else {
     sfx.lose();
     $('loseScore').textContent = 'Счёт: ' + state.score + ' · ' +
-      (state.wave > TOTAL_WAVES ? 'Выживание, волна ' + state.wave : 'Волна ' + state.wave + ' / ' + TOTAL_WAVES);
+      (state.wave > TOTAL_WAVES ? 'Выживание, волна ' + state.wave : 'Волна ' + state.wave + ' / ' + TOTAL_WAVES) +
+      ' · ⏱ ' + fmtTime(secs);
     $('loseBest').textContent = rec;
     $('retryBtn').textContent = checkpoint > 1 ? ('С ВОЛНЫ ' + checkpoint) : 'ЕЩЁ РАЗ';
     $('retryStartBtn').hidden = checkpoint <= 1;
@@ -1857,6 +1930,7 @@ function applyPickup(p){
 // ---------- update ----------
 function update(dt){
   state.time += dt;
+  state.playT = (state.playT || 0) + dt; // чистое время боя (пауза и заставки не идут)
 
   // player movement
   let mx = 0, my = 0;
@@ -4096,6 +4170,22 @@ $('quitBtn').addEventListener('click', ()=>{
 });
 $('loseMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); });
 $('winMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); });
+// ×2 монет за rewarded-рекламу (Яндекс/VK)
+function adDoubleCoins(btn){
+  btn.disabled = true;
+  platformAds.rewarded(ok => {
+    if(ok && state.lastEarned > 0){
+      profile.coins += state.lastEarned;
+      saveProfile();
+      btn.textContent = '+' + state.lastEarned + ' 🪙 ✓';
+      state.lastEarned = 0;
+    } else {
+      btn.disabled = false;
+    }
+  });
+}
+$('adCoinsBtn').addEventListener('click', e=> adDoubleCoins(e.currentTarget));
+$('adCoinsBtnW').addEventListener('click', e=> adDoubleCoins(e.currentTarget));
 
 // ---------- магазин ----------
 let shopPrevList = []; // живые превью: перерисовываются каждый кадр, пока магазин открыт
@@ -4315,7 +4405,8 @@ function renderBoardRows(list, rows, showTank){
     row.querySelector('.nm').textContent = String(r.name || 'Аноним').slice(0, 20)
       + (showTank && r.tank ? ' · ' + (short[r.tank] || '') : '')
       + (dShort[r.diff] || '');
-    row.querySelector('.wv').textContent = 'в.' + (r.wave|0) + (r._mw ? ' (макс ' + r._mw + ')' : '') + ' · ' + (r.score|0);
+    row.querySelector('.wv').textContent = 'в.' + (r.wave|0) + (r._mw ? ' (макс ' + r._mw + ')' : '') + ' · ' + (r.score|0)
+      + (r.secs ? ' · ⏱' + fmtTime(r.secs) : '');
     list.append(row);
   });
 }
@@ -4505,7 +4596,7 @@ if(window.claude?.hot?.ready){ window.claude.hot.ready(boot); } else { boot(wind
 </script>
 
 <script>
-if ('serviceWorker' in navigator) {
+if (PLATFORM === 'web' && 'serviceWorker' in navigator) { // в контейнерах площадок SW не нужен
   window.addEventListener('load', function(){
     navigator.serviceWorker.register('./sw.js').then(function(reg){
       // проверяем обновления при каждом возвращении в приложение

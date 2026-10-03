@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v35';
+const GAME_VERSION = 'v36';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -594,6 +594,10 @@ const sfx = {
     beep(230, .05, 'square', .03, -130);
   },
   dash(){ noiseBurst(.22, .06, 'lowpass', 380, 1100); }, // рывок босса
+  beamHum(){ // гул лазера: тикает, пока луч горит
+    beep(92, .1, 'sawtooth', .03, 22);
+    noiseBurst(.06, .016, 'highpass', 5200, 300);
+  },
   // супер: многослойный взрыв главного калибра
   superBoom(){
     beep(55, .7, 'sine', .16, -27);                 // суб-бас
@@ -666,11 +670,19 @@ const music = (() => {
     // рок-драйв: ми-минорный рифф пилой, 142 BPM
     rock: {
       name: 'РОК', bpm: 142, leadType: 'sawtooth', leadVol: 0.026, bassVol: 0.06,
+      // вторая «гитара»: пауэр-квинты на слабые доли
+      harmType: 'sawtooth', harmVol: 0.012, harmLen: 1.2,
       lead: [
         64,0,0,64, 67,0,64,0, 62,0,64,0, 60,0,62,0,
         64,0,0,64, 67,0,69,0, 71,0,69,0, 67,0,64,0,
         60,0,0,60, 64,0,60,0, 59,0,60,0, 62,0,64,0,
         55,0,59,62, 64,0,62,0, 59,0,62,0, 64,0,0,0
+      ],
+      harm: [
+        0,0,47,0, 0,0,52,0, 0,0,47,0, 0,0,52,0,
+        0,0,43,0, 0,0,48,0, 0,0,43,0, 0,0,48,0,
+        0,0,47,0, 0,0,52,0, 0,0,47,0, 0,0,52,0,
+        0,0,45,0, 0,0,50,0, 0,0,47,0, 0,0,52,0
       ],
       bass: [
         40,40,40,40, 40,40,47,40, 36,36,36,36, 36,36,43,36,
@@ -681,11 +693,19 @@ const music = (() => {
     // чилл: неторопливый мажорный перебор, 96 BPM
     chill: {
       name: 'ЧИЛЛ', bpm: 96, leadType: 'triangle', leadVol: 0.05, bassVol: 0.045,
+      // подголоски-«подушки»: длинные тихие ноты синусом по аккордам
+      harmType: 'sine', harmVol: 0.02, harmLen: 7,
       lead: [
         76,0,0,0, 74,0,72,0, 69,0,0,0, 0,0,72,74,
         76,0,0,0, 79,0,76,0, 74,0,0,0, 0,0,0,0,
         72,0,0,0, 71,0,69,0, 67,0,0,0, 0,0,69,71,
         72,0,0,0, 74,0,71,0, 69,0,0,0, 0,0,0,0
+      ],
+      harm: [
+        64,0,0,0, 0,0,0,0, 60,0,0,0, 0,0,0,0,
+        69,0,0,0, 0,0,0,0, 65,0,0,0, 0,0,0,0,
+        67,0,0,0, 0,0,0,0, 64,0,0,0, 0,0,0,0,
+        71,0,0,0, 0,0,0,0, 67,0,0,0, 0,0,0,0
       ],
       bass: [
         45,0,45,0, 45,0,45,0, 41,0,41,0, 41,0,41,0,
@@ -762,9 +782,9 @@ const music = (() => {
       const i = step % 64;
       const m = T.lead[i];
       if(m) osc(T.leadType, f(m), nextTime, STEP*(T.leadLen || 1.7), T.leadVol);
-      if(T.harm){ // второй квадратный голос (NES pulse 2)
+      if(T.harm){ // второй голос: тембр и длина — на выбор трека
         const h = T.harm[i];
-        if(h) osc('square', f(h), nextTime, STEP*1.4, T.harmVol || 0.016);
+        if(h) osc(T.harmType || 'square', f(h), nextTime, STEP*(T.harmLen || 1.4), T.harmVol || 0.016);
       }
       if(i % 2 === 0){
         const b = T.bass[(i/2) % 32];
@@ -1131,7 +1151,8 @@ function resetGame(wave, score, hp){
   player.x = W*0.5; player.y = H*0.65;
   player.hp = Math.min(player.maxHp, hp ?? player.maxHp);
   player.hull = -Math.PI/2; player.turret = -Math.PI/2; player.cd = 0;
-  player.shieldT = 0; player.rapidT = 0; player.tripleT = 0; player.superCharge = 0;
+  player.shieldT = 0; player.rapidT = 0; player.tripleT = 0; player.beamT = 0; player.superCharge = 0;
+  state.beamVis = 0;
   state.warmup = false;
   // старт с чекпоинта — боевой комплект: щит, почти полный супер,
   // бонусы под рукой и облегчённая первая волна
@@ -1425,6 +1446,47 @@ function playerShoot(){
   sfx.cannon(profile.tank); // у каждого класса свой голос пушки
   state.shake = Math.min(state.shake + (REDUCED?0:2), 6);
 }
+
+// бонус ЛУЧ: вместо пушки — непрерывный лазер, прожигает всех на линии
+function beamTick(dt){
+  const a = player.turret;
+  const ox = player.x + Math.cos(a)*36, oy = player.y + Math.sin(a)*36;
+  const dps = player.dmg * 4; // ~вдвое мощнее пушки, и бьёт сквозь строй
+  const hitAt = (tx, ty, tr) => { // проекция цели на луч; -1 если мимо
+    const px = tx - ox, py = ty - oy;
+    const proj = px*Math.cos(a) + py*Math.sin(a);
+    if(proj < 0) return -1;
+    return Math.abs(-Math.sin(a)*px + Math.cos(a)*py) < tr + 7 ? proj : -1;
+  };
+  const sparks = (pr) => {
+    if(!REDUCED && Math.random() < dt*26)
+      explode(ox + Math.cos(a)*pr, oy + Math.sin(a)*pr, '#9fe8ff', 3);
+  };
+  for(let j = enemies.length-1; j >= 0; j--){
+    const e = enemies[j];
+    const pr = hitAt(e.x, e.y, e.r);
+    if(pr < 0) continue;
+    e.hp -= dps*dt; sparks(pr);
+    if(e.hp <= 0) destroyEnemy(j);
+  }
+  for(let j = drones.length-1; j >= 0; j--){
+    const dr = drones[j];
+    const pr = hitAt(dr.x, dr.y, dr.r);
+    if(pr < 0) continue;
+    dr.hp -= dps*dt; sparks(pr);
+    if(dr.hp <= 0) destroyDrone(j);
+  }
+  if(boss && !boss.entering){
+    const pr = hitAt(boss.x, boss.y, boss.r);
+    if(pr >= 0){
+      boss.hp -= dps*dt; sparks(pr);
+      if(boss.hp <= 0){ onBossKilled(); return; }
+    }
+  }
+  state.beamVis = 0.08; // рендеру: луч сейчас горит
+  state.beamSfx = (state.beamSfx || 0) - dt;
+  if(state.beamSfx <= 0){ sfx.beamHum(); state.beamSfx = 0.085; }
+}
 function enemyShoot(e){
   // снайпер бьёт точно по зафиксированному лазером направлению
   const a = (e.type === 'sniper' && e.lockA != null) ? e.lockA : e.turret + rand(-0.08, 0.08);
@@ -1555,10 +1617,12 @@ const PICKS = [
 ];
 function dropPickup(x, y){
   if(Math.random() > currentDiff().drop) return;
-  const total = PICKS.reduce((s,p)=>s+p.w,0);
+  // ЛУЧ — редкий бонус поздних волн (с 60-й)
+  const picks = state.wave >= 60 ? PICKS.concat([{ type:'beam', w:0.9 }]) : PICKS;
+  const total = picks.reduce((s,p)=>s+p.w,0);
   let r = Math.random()*total;
   let type = 'med';
-  for(const p of PICKS){ r -= p.w; if(r <= 0){ type = p.type; break; } }
+  for(const p of picks){ r -= p.w; if(r <= 0){ type = p.type; break; } }
   pickups.push({ x, y, type, t:0 });
 }
 function applyPickup(p){
@@ -1571,6 +1635,11 @@ function applyPickup(p){
   else if(p.type === 'triple'){ player.tripleT = 8 + bb + U.triple*2; addFloat(p.x, p.y, U.triple >= 3 ? 'ПЯТЕРНОЙ!' : 'ТРОЙНОЙ!', '#ff9f43'); }
   else if(p.type === 'freeze'){ state.freezeT = 3.5; addFloat(p.x, p.y, 'ЗАМОРОЗКА!', '#9fd9e8'); }
   else if(p.type === 'magnet'){ state.magnetT = 10; addFloat(p.x, p.y, 'МАГНИТ!', '#f78fb3'); }
+  else if(p.type === 'beam'){
+    player.beamT = 6 + bb;
+    addFloat(p.x, p.y, 'ЛУЧ!', '#6fd9e8');
+    voice.say('Лазер активирован', { rate: 0.95 });
+  }
 }
 
 // ---------- update ----------
@@ -1601,6 +1670,8 @@ function update(dt){
   player.shieldT = Math.max(0, player.shieldT - dt);
   player.rapidT = Math.max(0, player.rapidT - dt);
   player.tripleT = Math.max(0, player.tripleT - dt);
+  player.beamT = Math.max(0, (player.beamT || 0) - dt);
+  state.beamVis = Math.max(0, (state.beamVis || 0) - dt);
 
   // aim
   let aimA = null;
@@ -1626,7 +1697,9 @@ function update(dt){
   // fire
   player.cd -= dt;
   const firing = mouse.down || keys['Space'] || fireTouch.id !== null;
-  if(firing && player.cd <= 0 && (aimA !== null || !IS_TOUCH)){
+  if(firing && player.beamT > 0 && (aimA !== null || !IS_TOUCH)){
+    beamTick(dt); // ЛУЧ заменяет пушку, пока активен
+  } else if(firing && player.cd <= 0 && (aimA !== null || !IS_TOUCH)){
     playerShoot();
     const cls = playerClass();
     player.cd = (player.rapidT > 0 ? cls.rapidCd : cls.cd) * (player.cdMult || 1);
@@ -2003,6 +2076,7 @@ function update(dt){
   if(player.shieldT > 0) fx.push('Щит ' + Math.ceil(player.shieldT));
   if(player.rapidT > 0) fx.push('Скорострел ' + Math.ceil(player.rapidT));
   if(player.tripleT > 0) fx.push('Тройной ' + Math.ceil(player.tripleT));
+  if(player.beamT > 0) fx.push('🔆 ЛУЧ ' + Math.ceil(player.beamT));
   $('fxtext').textContent = fx.join(' · ');
 }
 
@@ -2466,7 +2540,8 @@ function drawPickup(m){
     rapid:  { base:'#f1c40f', dark:'#c29a08', edge:'#8a6d05' },
     triple: { base:'#ff9f43', dark:'#d97f2a', edge:'#9c5a14' },
     freeze: { base:'#bfe8f5', dark:'#8fc3d6', edge:'#5a92a8' },
-    magnet: { base:'#f3f6f8', dark:'#c4ccd4', edge:'#7d8a94' }
+    magnet: { base:'#f3f6f8', dark:'#c4ccd4', edge:'#7d8a94' },
+    beam:   { base:'#4aa6d8', dark:'#2d7aa8', edge:'#1a5578' }
   };
   const S = SPEC[m.type] || SPEC.med;
   ctx.save();
@@ -2517,6 +2592,14 @@ function drawPickup(m){
       ctx.lineWidth = 5.4; ctx.lineCap = 'butt';
       ctx.beginPath(); ctx.arc(0, -1, 6, 0, Math.PI); ctx.stroke();
       ctx.fillRect(-8.5, -8, 5, 5); ctx.fillRect(3.5, -8, 5, 5);
+    } else if(m.type === 'beam'){
+      ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-7, 7); ctx.lineTo(5, -5); ctx.stroke();
+      ctx.lineWidth = 1.8; // искры у точки попадания
+      ctx.beginPath();
+      ctx.moveTo(3, -9); ctx.lineTo(8, -4);
+      ctx.moveTo(6, -9.5); ctx.lineTo(9, -6.5);
+      ctx.stroke();
     }
     ctx.restore();
   };
@@ -2526,7 +2609,8 @@ function drawPickup(m){
     rapid:  ['#3a2e01', '#5c4a02'],
     triple: ['#3d2005', '#5e3208'],
     freeze: ['#0f465e', '#1d6a8a'],
-    magnet: ['#9c2015', '#e84c3d']
+    magnet: ['#9c2015', '#e84c3d'],
+    beam:   ['#06283a', '#dff6ff']
   }[m.type] || ['#333', '#555'];
   icon(1, 1.5, ICON_COLORS[0]); // тень иконки
   icon(0, 0, ICON_COLORS[1]);   // сама иконка
@@ -2729,6 +2813,27 @@ function render(){
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r*0.45, 0, Math.PI*2); ctx.fill();
+  }
+
+  // ЛУЧ: прожигающий лазер игрока — три слоя света в режиме сложения
+  if(state.beamVis > 0 && state.mode === 'play'){
+    const ba = player.turret;
+    const ox = player.x + Math.cos(ba)*36, oy = player.y + Math.sin(ba)*36;
+    const ex2 = ox + Math.cos(ba)*1500, ey2 = oy + Math.sin(ba)*1500;
+    const bp = 0.75 + 0.25*Math.sin(state.time*40);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = '#2d8fb8'; ctx.globalAlpha = 0.35*bp; ctx.lineWidth = 14;
+    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex2, ey2); ctx.stroke();
+    ctx.strokeStyle = '#6fd9e8'; ctx.globalAlpha = 0.8; ctx.lineWidth = 5*bp;
+    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex2, ey2); ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.95; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex2, ey2); ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#dff6ff'; ctx.globalAlpha = 0.9; // свечение у дула
+    ctx.beginPath(); ctx.arc(ox, oy, 4.5 + 2*bp, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
   }
 
   // дроны-«герани»: большое дельта-крыло, летят над полем боя

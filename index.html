@@ -269,7 +269,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v43';
+const GAME_VERSION = 'v44';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -367,7 +367,7 @@ const SKINS = [
   { id:'kolobok', name:'Колобок',    cost:1000, hull:'#f6c82d', dark:'#9c7a10', fx:{ body:'hover', eyeColor:'#2b1b02' } },
   { id:'bogatyr', name:'Богатырь',   cost:1200, hull:'#9db0bf', dark:'#4e5a6a', fx:{ turretColor:'#f6d32d', barrel:'heavy' } },
   { id:'yaga',    name:'Баба-яга',   cost:1300, hull:'#5a4632', dark:'#2b2013', fx:{ antenna:true, eyeColor:'#9fff8a', glow:'#6a8f4a' } },
-  { id:'gorynych',name:'Горыныч',    cost:1400, hull:'#3e7a3a', dark:'#1d4a1c', fx:{ pattern:'scales', barrel:'double', eyeColor:'#ff5540' } },
+  { id:'gorynych',name:'Горыныч',    cost:1400, hull:'#3e7a3a', dark:'#1d4a1c', fx:{ pattern:'scales', barrel:'triple', eyeColor:'#ff5540' } },
   { id:'firebird',name:'Жар-птица',  cost:1500, hull:'#ff7b2f', dark:'#8a2f10', fx:{ pattern:'feathers', glow:'#ffb347', sparkle:true } },
   { id:'emelya',  name:'Емеля',      cost:1700, hull:'#f0ead8', dark:'#8a7a60', fx:{ body:'pech' } },
   { id:'rainbow', name:'Хамелеон',   cost:2000, hull:'#58d97b', dark:'#1f7a40', fx:{ rainbow:true } }
@@ -1482,14 +1482,22 @@ function leaveTrack(t, scale){
 
 // ---------- shooting ----------
 function playerShoot(){
-  // тройной; на максимальной прокачке — пять стволов
-  const offs = player.tripleT > 0
-    ? (profile.upg.triple >= 3 ? [-0.3, -0.15, 0, 0.15, 0.3] : [-0.16, 0, 0.16])
-    : [0];
+  // тройной бонус; на максимальной прокачке — пять стволов.
+  // Горыныч всегда бьёт тремя головами, но каждая — на треть слабее.
+  const hydra = (playerSkin().fx || {}).barrel === 'triple';
+  let offs, dmg = player.dmg;
+  if(player.tripleT > 0){
+    offs = profile.upg.triple >= 3 ? [-0.3, -0.15, 0, 0.15, 0.3] : [-0.16, 0, 0.16];
+  } else if(hydra){
+    offs = [-0.14, 0, 0.14];
+    dmg = Math.max(1, Math.round(player.dmg * 2 / 3));
+  } else {
+    offs = [0];
+  }
   for(const off of offs){
     const a = player.turret + off;
     bullets.push({ x:player.x + Math.cos(a)*34, y:player.y + Math.sin(a)*34,
-                   vx:Math.cos(a)*560, vy:Math.sin(a)*560, from:'p', dmg:player.dmg, r:playerClass().br });
+                   vx:Math.cos(a)*560, vy:Math.sin(a)*560, from:'p', dmg, r:playerClass().br });
   }
   flash(player.x + Math.cos(player.turret)*38, player.y + Math.sin(player.turret)*38, player.turret);
   // вылетающая гильза
@@ -2440,6 +2448,18 @@ function drawTank(t, opts, c){
     c.fillStyle = '#00000055';
     c.fillRect(30*s, -8.5*s, 4*s, 6*s);
     c.fillRect(30*s, 2.5*s, 4*s, 6*s);
+  } else if(fx.barrel === 'triple'){
+    // три головы Горыныча: центральная и две в веере
+    for(const ba of [-0.26, 0, 0.26]){
+      c.save();
+      c.rotate(ba);
+      c.fillStyle = darkC;
+      rrectC(c, 10*s, -3.2*s, 23*s, 6.4*s, 2.8*s); c.fill();
+      c.fillStyle = '#00000055';
+      c.fillRect(29*s, -3.2*s, 4*s, 6.4*s);
+      c.restore();
+    }
+    c.fillStyle = darkC;
   } else if(fx.barrel === 'heavy'){
     rrectC(c, 10*s, -5*s, 31*s, 10*s, 3*s); c.fill();
     c.fillStyle = '#00000055';

@@ -270,7 +270,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v46';
+const GAME_VERSION = 'v47';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1491,20 +1491,24 @@ function leaveTrack(t, scale){
 
 // ---------- shooting ----------
 function playerShoot(){
-  // тройной бонус; на максимальной прокачке — пять стволов.
-  // Горыныч всегда бьёт тремя головами, но каждая — на треть слабее.
-  const hydra = (playerSkin().fx || {}).barrel === 'triple';
-  let offs, dmg = player.dmg;
+  // Тройной бонус; на максимальной прокачке — пять стволов.
+  // Многоствольные скины стреляют из каждого ствола, но каждый — на треть слабее:
+  // Горыныч — три головы, Двустволка — два ствола.
+  const skb = (playerSkin().fx || {}).barrel;
+  let offs, lats = null, dmg = player.dmg;
   if(player.tripleT > 0){
     offs = profile.upg.triple >= 3 ? [-0.3, -0.15, 0, 0.15, 0.3] : [-0.16, 0, 0.16];
-  } else if(hydra){
+  } else if(skb === 'triple'){
     offs = [-0.08, 0, 0.08];
+    lats = [-8.5, 0, 8.5];
+    dmg = Math.max(1, Math.round(player.dmg * 2 / 3));
+  } else if(skb === 'double'){
+    offs = [-0.05, 0.05];
+    lats = [-5.5, 5.5];
     dmg = Math.max(1, Math.round(player.dmg * 2 / 3));
   } else {
     offs = [0];
   }
-  // у «гидры» без бонуса снаряды вылетают каждый из своего ствола
-  const lats = (hydra && player.tripleT <= 0) ? [-8.5, 0, 8.5] : null;
   offs.forEach((off, i)=>{
     const a = player.turret + off;
     const lat = lats ? lats[i] : 0;

@@ -57,20 +57,34 @@ html{height:100%}
 .overlay > *{flex-shrink:0} /* не давать flex сжимать строки друг в друга */
 .overlay > :first-child{margin-top:auto}
 .overlay > :last-child{margin-bottom:auto}
-.overlay h1{margin:0;font-size:clamp(24px,6.6vw,58px);letter-spacing:2px;color:var(--accent);text-shadow:0 4px 0 #1c5c33,0 8px 24px #000}
-.overlay h1.red{color:var(--danger);text-shadow:0 4px 0 #6e1810,0 8px 24px #000}
-.overlay h1.gold{color:var(--gold);text-shadow:0 4px 0 #7a6207,0 8px 24px #000}
+/* приставочный стиль: пиксельный шрифт заголовков + ступенчатая «трёхмерная» тень */
+.overlay h1{margin:0;font-family:'Press Start 2P','Russo One',monospace;font-size:clamp(15px,4.2vw,30px);
+  line-height:1.55;letter-spacing:1px;color:var(--accent);
+  text-shadow:0 3px 0 #1c5c33,0 6px 0 #0d3319,0 10px 18px #000}
+.overlay h1.red{color:var(--danger);text-shadow:0 3px 0 #6e1810,0 6px 0 #380c08,0 10px 18px #000}
+.overlay h1.gold{color:var(--gold);text-shadow:0 3px 0 #7a6207,0 6px 0 #3d3103,0 10px 18px #000}
+#menu h1{animation:titlebob 2.6s ease-in-out infinite}
+@keyframes titlebob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+/* CRT-сканлайны поверх меню */
+.overlay::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,0.13) 0 1px,transparent 1px 3px)}
+@media (prefers-reduced-motion: reduce){ #menu h1{animation:none} }
 .overlay p{margin:0;max-width:520px;color:var(--ink-dim);font-size:15px;line-height:1.6}
 .overlay .score-final{font-size:22px;color:var(--ink)}
 .overlay .record{color:var(--gold);font-size:15px}
 .btn{
-  pointer-events:auto;cursor:pointer;border:0;border-radius:14px;
+  pointer-events:auto;cursor:pointer;border:3px solid #0a2b14;border-radius:8px;
   background:linear-gradient(180deg,#6fe58f,#2e9c4f);color:#0c2414;
   font-family:inherit;font-size:20px;letter-spacing:1px;padding:14px 42px;
-  box-shadow:0 5px 0 #1c5c33,0 10px 20px #0008;transition:transform .08s,box-shadow .08s;
+  box-shadow:0 5px 0 #1c5c33,5px 8px 0 #00000059;transition:transform .08s,box-shadow .08s;
 }
-.btn.gray{background:linear-gradient(180deg,#9db0bf,#5c7183);color:#101820;box-shadow:0 5px 0 #38485a,0 10px 20px #0008}
-.btn:active{transform:translateY(4px);box-shadow:0 1px 0 #1c5c33,0 4px 10px #0008}
+.btn.gray{border-color:#1b242e;background:linear-gradient(180deg,#9db0bf,#5c7183);color:#101820;box-shadow:0 5px 0 #38485a,5px 8px 0 #00000059}
+.btn:active{transform:translateY(4px);box-shadow:0 1px 0 #1c5c33,2px 3px 0 #00000059}
+/* главная кнопка — как «PRESS START» на приставке: пиксельный шрифт и мигающий курсор */
+#startBtn{font-family:'Press Start 2P','Russo One',monospace;font-size:clamp(13px,2.8vw,17px);padding:17px 30px}
+#startBtn::before{content:'► ';animation:blinkc .9s steps(1) infinite}
+@keyframes blinkc{50%{opacity:0}}
+@media (prefers-reduced-motion: reduce){ #startBtn::before{animation:none} }
 .btn:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 .keys{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;color:var(--ink-dim);font-size:13px}
 .keys b{color:var(--ink)}
@@ -114,7 +128,7 @@ html{height:100%}
 #skinColor{width:46px;height:36px;border:2px solid #39434d;border-radius:8px;background:#141a20;padding:2px;cursor:pointer}
 @media (prefers-reduced-motion: reduce){ #hpbar{transition:none} }
 </style>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Press+Start+2P&display=swap">
 
 <canvas id="game"></canvas>
 
@@ -254,7 +268,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v39';
+const GAME_VERSION = 'v40';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -3563,6 +3577,15 @@ function loop(now){
   if(window.innerWidth !== W || window.innerHeight !== H) resize();
   if(state.mode === 'play') update(dt);
   else if(state.mode === 'story'){ state.time += dt; story.t += dt; }
+  else state.time += dt; // в меню время тоже идёт: живут мигалки, пламя, хамелеон
+  // живые превью скинов, пока открыт магазин
+  if(!$('shop').hidden && shopPrevList.length){
+    for(const p of shopPrevList){
+      p.c.clearRect(0, 0, 76, 76);
+      drawTank({ x:38, y:41, hull:-Math.PI/2, turret:-Math.PI/2, blink:0, trackPhase: state.time*26 },
+               { hullColor:p.s.hull, darkColor:p.s.dark, scale:0.8, fx:p.s.fx }, p.c);
+    }
+  }
   render();
   requestAnimationFrame(loop);
 }
@@ -3593,18 +3616,22 @@ $('loseMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenu
 $('winMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); });
 
 // ---------- магазин ----------
+let shopPrevList = []; // живые превью: перерисовываются каждый кадр, пока магазин открыт
 function renderShop(){
   $('shopCoins').textContent = '🪙 ' + profile.coins + ' · монеты за очки в бою (10 очков = 1 🪙)';
   $('skinColor').value = profile.customColor || skinById(profile.equipped).hull;
   const grid = $('shopGrid');
   grid.innerHTML = '';
+  shopPrevList = [];
   for(const s of SKINS){
     const card = document.createElement('div'); card.className = 'skincard';
     // превью — настоящий танк в этом скине
     const prev = document.createElement('canvas');
     prev.className = 'prev'; prev.width = 76; prev.height = 76;
+    const pc = prev.getContext('2d');
     drawTank({ x:38, y:41, hull:-Math.PI/2, turret:-Math.PI/2, blink:0 },
-             { hullColor:s.hull, darkColor:s.dark, scale:0.8, fx:s.fx }, prev.getContext('2d'));
+             { hullColor:s.hull, darkColor:s.dark, scale:0.8, fx:s.fx }, pc);
+    shopPrevList.push({ c: pc, s });
     const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = s.name;
     const btn = document.createElement('button'); btn.className = 'skbtn';
     const owned = profile.skins.includes(s.id);

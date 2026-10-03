@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v36';
+const GAME_VERSION = 'v37';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -476,7 +476,7 @@ function setNetStat(text){
 async function fetchOnline(){
   if(!onlineEnabled()) return null;
   try{
-    const r = await fetch(ONLINE.url + '/rest/v1/scores?select=name,score,wave,tank,diff,cups&order=cups.desc,score.desc&limit=10',
+    const r = await fetch(ONLINE.url + '/rest/v1/scores?select=name,score,wave,tank,diff,cups&order=cups.desc,score.desc&limit=100',
       { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } });
     if(!r.ok) return null;
     return await r.json();
@@ -500,6 +500,20 @@ function submitScore(name, score, wave, tank, diff){
   try{ localStorage.setItem('sm_board', JSON.stringify(board)); }catch(e){}
   return board.indexOf(entry) + 1; // 0 — не вошёл в топ
 }
+
+// Разовая миграция: лучший локальный рекорд, сыгранный ещё до подключения
+// МИРа (например, выживание до 112-й), отправляется в мировую таблицу.
+async function migrateLocalBest(){
+  if(!onlineEnabled() || !board.length) return;
+  try{ if(localStorage.getItem('sm_migrated')) return; }catch(e){}
+  try{ localStorage.setItem('sm_migrated', '1'); }catch(e){}
+  const bst = board.slice().sort((a,b)=> cupsOf(b) - cupsOf(a) || (b.score|0) - (a.score|0))[0];
+  if(bst) await pushScore({ name: bst.name, score: bst.score|0, wave: bst.wave|0,
+                            tank: bst.tank || 'uni', diff: bst.diff || 'norm', cups: cupsOf(bst) });
+}
+// при старте и при возвращении сети дошлём недоставленные результаты
+setTimeout(()=>{ flushOutbox(); migrateLocalBest(); }, 2500);
+window.addEventListener('online', ()=> flushOutbox());
 
 // ---------- checkpoint: продолжить с начала десятки после побеждённого босса ----------
 function loadCheckpoint(){
@@ -3504,7 +3518,22 @@ function renderBoard(){
         list.append(r2);
         return;
       }
-      renderBoardRows(list, data, true);
+      // один игрок — одна строка: берём его лучший результат,
+      // иначе топ забивается дубликатами одних и тех же имён
+      const bestBy = new Map(), maxWave = new Map();
+      for(const r3 of data){
+        const k = String(r3.name || 'Аноним').trim().toLowerCase();
+        maxWave.set(k, Math.max(maxWave.get(k) || 0, r3.wave|0));
+        const prev = bestBy.get(k);
+        if(!prev || cupsOf(r3) > cupsOf(prev) ||
+           (cupsOf(r3) === cupsOf(prev) && (r3.score|0) > (prev.score|0))) bestBy.set(k, r3);
+      }
+      const uniq = [...bestBy.values()].sort((a,b)=> cupsOf(b) - cupsOf(a) || (b.score|0) - (a.score|0));
+      for(const r3 of uniq){ // рекорд глубины (выживание) может быть в другом бою
+        const mw = maxWave.get(String(r3.name || 'Аноним').trim().toLowerCase()) || 0;
+        if(mw > (r3.wave|0)) r3._mw = mw;
+      }
+      renderBoardRows(list, uniq, true);
     });
     return;
   }
@@ -3528,7 +3557,7 @@ function renderBoardRows(list, rows, showTank){
     row.querySelector('.nm').textContent = String(r.name || 'Аноним').slice(0, 20)
       + (showTank && r.tank ? ' · ' + (short[r.tank] || '') : '')
       + (dShort[r.diff] || '');
-    row.querySelector('.wv').textContent = 'в.' + (r.wave|0) + ' · ' + (r.score|0);
+    row.querySelector('.wv').textContent = 'в.' + (r.wave|0) + (r._mw ? ' (макс ' + r._mw + ')' : '') + ' · ' + (r.score|0);
     list.append(row);
   });
 }

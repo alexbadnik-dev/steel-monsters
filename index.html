@@ -269,7 +269,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v44';
+const GAME_VERSION = 'v45';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1489,16 +1489,20 @@ function playerShoot(){
   if(player.tripleT > 0){
     offs = profile.upg.triple >= 3 ? [-0.3, -0.15, 0, 0.15, 0.3] : [-0.16, 0, 0.16];
   } else if(hydra){
-    offs = [-0.14, 0, 0.14];
+    offs = [-0.08, 0, 0.08];
     dmg = Math.max(1, Math.round(player.dmg * 2 / 3));
   } else {
     offs = [0];
   }
-  for(const off of offs){
+  // у «гидры» без бонуса снаряды вылетают каждый из своего ствола
+  const lats = (hydra && player.tripleT <= 0) ? [-8.5, 0, 8.5] : null;
+  offs.forEach((off, i)=>{
     const a = player.turret + off;
-    bullets.push({ x:player.x + Math.cos(a)*34, y:player.y + Math.sin(a)*34,
+    const lat = lats ? lats[i] : 0;
+    bullets.push({ x:player.x + Math.cos(a)*34 - Math.sin(a)*lat,
+                   y:player.y + Math.sin(a)*34 + Math.cos(a)*lat,
                    vx:Math.cos(a)*560, vy:Math.sin(a)*560, from:'p', dmg, r:playerClass().br });
-  }
+  });
   flash(player.x + Math.cos(player.turret)*38, player.y + Math.sin(player.turret)*38, player.turret);
   // вылетающая гильза
   if(!REDUCED){
@@ -2449,17 +2453,14 @@ function drawTank(t, opts, c){
     c.fillRect(30*s, -8.5*s, 4*s, 6*s);
     c.fillRect(30*s, 2.5*s, 4*s, 6*s);
   } else if(fx.barrel === 'triple'){
-    // три головы Горыныча: центральная и две в веере
-    for(const ba of [-0.26, 0, 0.26]){
-      c.save();
-      c.rotate(ba);
-      c.fillStyle = darkC;
-      rrectC(c, 10*s, -3.2*s, 23*s, 6.4*s, 2.8*s); c.fill();
-      c.fillStyle = '#00000055';
-      c.fillRect(29*s, -3.2*s, 4*s, 6.4*s);
-      c.restore();
-    }
-    c.fillStyle = darkC;
+    // три отдельных ствола-«шеи» Горыныча, средний длиннее
+    rrectC(c, 10*s, -11*s, 22*s, 5.6*s, 2.5*s); c.fill();
+    rrectC(c, 11*s, -2.8*s, 27*s, 5.6*s, 2.5*s); c.fill();
+    rrectC(c, 10*s, 5.4*s, 22*s, 5.6*s, 2.5*s); c.fill();
+    c.fillStyle = '#00000055';
+    c.fillRect(28*s, -11*s, 4*s, 5.6*s);
+    c.fillRect(34*s, -2.8*s, 4*s, 5.6*s);
+    c.fillRect(28*s, 5.4*s, 4*s, 5.6*s);
   } else if(fx.barrel === 'heavy'){
     rrectC(c, 10*s, -5*s, 31*s, 10*s, 3*s); c.fill();
     c.fillStyle = '#00000055';

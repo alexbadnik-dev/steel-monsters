@@ -208,13 +208,14 @@ html{height:100%}
     <span><b>Красная кнопка</b> — огонь</span>
     <span>Пушка целится сама</span>
   </div>
-  <div class="bonuses">
-    <span><span class="chip" style="background:#f3f6f8">＋</span>лечение</span>
-    <span><span class="chip" style="background:#6fd9e8">Щ</span>щит</span>
-    <span><span class="chip" style="background:#f1c40f">⚡</span>скорострел</span>
-    <span><span class="chip" style="background:#ff9f43">3×</span>тройной</span>
-    <span><span class="chip" style="background:#bfe8f5">❄</span>заморозка</span>
-    <span><span class="chip" style="background:#f3f6f8">🧲</span>магнит</span>
+  <div class="bonuses" id="bonusChips">
+    <span data-pick="med">лечение</span>
+    <span data-pick="shield">щит</span>
+    <span data-pick="rapid">скорострел</span>
+    <span data-pick="triple">тройной</span>
+    <span data-pick="freeze">заморозка</span>
+    <span data-pick="magnet">магнит</span>
+    <span data-pick="beam">ЛУЧ (с 60-й волны)</span>
   </div>
   <p>Бонусы можно прокачать в магазине: сильнее лечилка, дольше щит и скорострел, а тройной на максимуме превращается в ПЯТЬ стволов.</p>
   <p>Боссы — каждая 10-я волна, у каждого свой характер. За босса танк получает перки: здоровье, урон, перезарядку, а с третьего — регенерацию.</p>
@@ -268,9 +269,10 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v40';
+const GAME_VERSION = 'v41';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const $ = id => document.getElementById(id);
@@ -2616,9 +2618,9 @@ function drawPet(c, x, y, type, aim, t){
   c.restore();
 }
 
-function drawPickup(m){
+function drawPickup(m, ctx = GCTX){ // второй аргумент — целевой канвас (превью в меню)
   const pulse = 1 + Math.sin(m.t*6)*0.07;
-  const fade = m.t > 9 ? (Math.sin(m.t*14) > 0 ? 1 : 0.3) : 1;
+  const fade = (!m.still && m.t > 9) ? (Math.sin(m.t*14) > 0 ? 1 : 0.3) : 1;
   const bob = Math.sin(m.t*2.6)*2.5; // парит над землёй
   const SPEC = {
     med:    { base:'#f3f6f8', dark:'#c4ccd4', edge:'#7d8a94' },
@@ -2639,16 +2641,16 @@ function drawPickup(m){
   ctx.scale(pulse, pulse);
   // корпус с толщиной: нижняя грань, боковая, лицевая
   ctx.fillStyle = S.edge;
-  rrect(-14, -10, 28, 26, 7); ctx.fill();
+  rrectC(ctx, -14, -10, 28, 26, 7); ctx.fill();
   ctx.fillStyle = S.dark;
-  rrect(-14, -12.5, 28, 26, 7); ctx.fill();
+  rrectC(ctx, -14, -12.5, 28, 26, 7); ctx.fill();
   ctx.fillStyle = S.base;
-  rrect(-14, -15, 28, 25, 7); ctx.fill();
+  rrectC(ctx, -14, -15, 28, 25, 7); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.6;
-  rrect(-14, -15, 28, 31, 7); ctx.stroke();
+  rrectC(ctx, -14, -15, 28, 31, 7); ctx.stroke();
   // глянцевый блик сверху
   ctx.fillStyle = '#ffffff40';
-  rrect(-14, -15, 28, 10, 7); ctx.fill();
+  rrectC(ctx, -14, -15, 28, 10, 7); ctx.fill();
   // иконка: сначала тёмная «тень» со сдвигом, затем сама — объём
   const icon = (dx, dy, color) => {
     ctx.save();
@@ -3586,6 +3588,13 @@ function loop(now){
                { hullColor:p.s.hull, darkColor:p.s.dark, scale:0.8, fx:p.s.fx }, p.c);
     }
   }
+  // живые ящики на экране прокачки
+  if(!$('perks').hidden && perkPrevList.length){
+    for(const p of perkPrevList){
+      p.c.clearRect(0, 0, 64, 64);
+      drawPickup({ x:32, y:30, type:p.type, t:state.time, still:true }, p.c);
+    }
+  }
   render();
   requestAnimationFrame(loop);
 }
@@ -3617,6 +3626,7 @@ $('winMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuB
 
 // ---------- магазин ----------
 let shopPrevList = []; // живые превью: перерисовываются каждый кадр, пока магазин открыт
+let perkPrevList = []; // живые ящики на экране прокачки
 function renderShop(){
   $('shopCoins').textContent = '🪙 ' + profile.coins + ' · монеты за очки в бою (10 очков = 1 🪙)';
   $('skinColor').value = profile.customColor || skinById(profile.equipped).hull;
@@ -3701,13 +3711,16 @@ function renderPerks(){
   $('perkCoins').textContent = '🪙 ' + profile.coins;
   const grid = $('perkGrid');
   grid.innerHTML = '';
+  perkPrevList = [];
   for(const u of UPGRADES){
     const lvl = profile.upg[u.id];
     const card = document.createElement('div'); card.className = 'skincard';
-    const chip = document.createElement('div');
-    chip.style.cssText = 'width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;' +
-      'font-size:20px;background:' + u.color + ';color:' + u.ink;
-    chip.textContent = u.chip;
+    // живой объёмный ящик — тот же, что падает на поле боя
+    const chip = document.createElement('canvas');
+    chip.width = 64; chip.height = 64; chip.style.cssText = 'width:52px;height:52px';
+    const pc2 = chip.getContext('2d');
+    drawPickup({ x:32, y:30, type:u.id, t:0.4, still:true }, pc2);
+    perkPrevList.push({ c: pc2, type: u.id });
     const nm = document.createElement('div'); nm.className = 'nm';
     nm.textContent = u.name + ' ' + '●'.repeat(lvl) + '○'.repeat(3 - lvl);
     const ds = document.createElement('div');
@@ -3811,6 +3824,15 @@ function renderBoardRows(list, rows, showTank){
 }
 $('boardBtn').addEventListener('click', ()=>{ renderBoard(); setOverlay('board'); });
 $('boardBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
+// мини-ящики бонусов в справке — те же, что на поле боя (рисуются один раз)
+(function renderHelpChips(){
+  document.querySelectorAll('#bonusChips [data-pick]').forEach(sp => {
+    const cv = document.createElement('canvas');
+    cv.width = 44; cv.height = 48; cv.style.cssText = 'width:26px;height:28px;flex:none';
+    drawPickup({ x:22, y:21, type: sp.dataset.pick, t:0.4, still:true }, cv.getContext('2d'));
+    sp.prepend(cv);
+  });
+})();
 $('helpBtn').addEventListener('click', ()=>{ setOverlay('help'); });
 $('helpBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
 $('perksBtn').addEventListener('click', ()=>{ renderPerks(); setOverlay('perks'); });

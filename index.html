@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v33';
+const GAME_VERSION = 'v34';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -608,11 +608,31 @@ const sfx = {
     beep(55, .55, 'triangle', .07, -25);
     noiseBurst(.26, .05, 'lowpass', 1300, -1100);
   },
-  pickup(){ beep(520, .09, 'sine', .08, 260); beep(780, .12, 'sine', .07, 200); },
+  // джинглы в духе NES (мелодии оригинальные)
+  pickup(){ // подбор ящика: короткое квадратное арпеджио вверх
+    [[523,0],[659,38],[1046,76]].forEach(([fq,d])=> setTimeout(()=> beep(fq,.07,'square',.05,60), d));
+  },
+  buy(){ // покупка в магазине: «та-да!» двумя аккордами
+    [392,494,587].forEach(fq=> beep(fq,.12,'square',.035));
+    setTimeout(()=> [523,659,784].forEach(fq=> beep(fq,.3,'square',.04)), 140);
+  },
+  waveClear(){ // волна зачищена: мини-фанфара
+    [[659,0],[784,70],[988,140],[1319,220]].forEach(([fq,d])=> setTimeout(()=> beep(fq,.09,'square',.035), d));
+  },
+  decade(){ // новый биом/чекпоинт: «секретный» перелив
+    [[880,0],[1109,60],[1319,120],[1760,190]].forEach(([fq,d])=> setTimeout(()=> beep(fq,.09,'triangle',.05), d));
+  },
   shieldPop(){ beep(900, .15, 'sine', .07, -500); },
   enrage(){ [160,120,160,120].forEach((f,i)=>setTimeout(()=>beep(f,.18,'sawtooth',.09),i*110)); },
-  win(){ [392,494,587,784].forEach((f,i)=>setTimeout(()=>beep(f,.22,'square',.07),i*140)); },
-  lose(){ [330,262,196,131].forEach((f,i)=>setTimeout(()=>beep(f,.26,'sawtooth',.06),i*170)); }
+  win(){ // босс повержен: фанфара в два голоса (квадрат + треугольный бас)
+    [[523,0],[659,110],[784,220],[1046,340],[784,500],[1046,610]]
+      .forEach(([fq,d])=> setTimeout(()=> beep(fq,.17,'square',.05), d));
+    [[262,0],[330,340],[392,610]].forEach(([fq,d])=> setTimeout(()=> beep(fq,.32,'triangle',.06), d));
+  },
+  lose(){ // поражение: хроматический спуск и низкий удар
+    [[494,0],[466,170],[440,340],[415,510]].forEach(([fq,d])=> setTimeout(()=> beep(fq,.2,'square',.045), d));
+    setTimeout(()=> beep(98,.7,'triangle',.07,-30), 690);
+  }
 };
 function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
 
@@ -622,7 +642,7 @@ const music = (() => {
   try{
     on = localStorage.getItem('sm_music') !== '0';
     const t = localStorage.getItem('sm_track');
-    if(['dance','rock','chill'].includes(t)) trackId = t;
+    if(['dance','rock','chill','dendy'].includes(t)) trackId = t;
   }catch(e){}
   let timer = null, step = 0, nextTime = 0, noiseBuf = null;
   const f = m => 440*Math.pow(2, (m-69)/12);
@@ -672,6 +692,31 @@ const music = (() => {
         48,0,48,0, 48,0,48,0, 43,0,43,0, 43,0,43,0
       ],
       kick: i => i % 8 === 0, snare: () => false, hat: i => i % 4 === 2
+    },
+    // «Денди»: честный NES — два квадратных голоса, треугольный бас, 160 BPM.
+    // Мелодия оригинальная, скопированы только приёмы эпохи: скачки́ октав,
+    // бодрые пробежки и ответы второго голоса на слабые доли.
+    dendy: {
+      name: 'ДЕНДИ', bpm: 160, leadType: 'square', leadVol: 0.03, bassVol: 0.05, harmVol: 0.016,
+      lead: [
+        72,76,79,76, 72,0,67,0, 69,71,72,74, 76,0,72,0,
+        77,76,74,76, 77,0,74,0, 79,77,76,74, 76,0,0,0,
+        76,79,84,79, 81,79,76,72, 74,76,77,74, 71,0,67,0,
+        72,74,76,77, 79,0,76,0, 74,0,71,0, 72,0,0,0
+      ],
+      harm: [
+        0,0,64,0, 0,0,67,0, 0,0,64,0, 0,0,67,0,
+        0,0,65,0, 0,0,69,0, 0,0,67,0, 0,0,71,0,
+        0,0,67,0, 0,0,64,0, 0,0,65,0, 0,0,62,0,
+        0,0,64,0, 0,0,67,0, 0,0,62,0, 0,0,64,0
+      ],
+      bass: [
+        36,48,36,48, 36,48,36,48,
+        41,53,41,53, 43,55,43,55,
+        36,48,36,48, 41,53,43,55,
+        36,48,43,55, 36,43,36,36
+      ],
+      kick: i => i % 8 === 0 || i % 16 === 6, snare: i => i % 8 === 4, hat: i => i % 2 === 1
     }
   };
   function cur(){ return TRACKS[trackId] || TRACKS.dance; }
@@ -714,6 +759,10 @@ const music = (() => {
       const i = step % 64;
       const m = T.lead[i];
       if(m) osc(T.leadType, f(m), nextTime, STEP*1.7, T.leadVol);
+      if(T.harm){ // второй квадратный голос (NES pulse 2)
+        const h = T.harm[i];
+        if(h) osc('square', f(h), nextTime, STEP*1.4, T.harmVol || 0.016);
+      }
       if(i % 2 === 0){
         const b = T.bass[(i/2) % 32];
         if(b) osc('triangle', f(b), nextTime, STEP*1.7, T.bassVol);
@@ -952,7 +1001,10 @@ function checkWaveClear(){
   if(waveDroneCount(state.wave) > 0 && drones.length > 0) return;
   waveClearT = setTimeout(()=>{
     waveClearT = null;
-    if(state.mode === 'play' && enemies.length === 0 && drones.length === 0 && !isBossWave(state.wave)) startWave(state.wave + 1);
+    if(state.mode === 'play' && enemies.length === 0 && drones.length === 0 && !isBossWave(state.wave)){
+      sfx.waveClear();
+      startWave(state.wave + 1);
+    }
   }, 900);
 }
 
@@ -1041,6 +1093,7 @@ function startWave(n){
     waveBanner = n % 10 === 1
       ? { text: (n === TOTAL_WAVES + 1 ? 'ВЫЖИВАНИЕ! · ' : 'ВОЛНА ' + n + ' · ') + biomeFor(n).name, t: 2.6 }
       : { text: 'ВОЛНА ' + n, t: 2.2 };
+    if(n % 10 === 1 && n > 1) sfx.decade(); // перелив на входе в новый биом (чекпоинт)
     let comp = waveComposition(n);
     let dn = waveDroneCount(n);
     // разгонная волна после старта с чекпоинта: на треть меньше врагов и без дронов
@@ -3225,7 +3278,7 @@ function renderShop(){
         profile.coins -= s.cost;
         profile.skins.push(s.id);
         profile.equipped = s.id;
-        saveProfile(); audio(); sfx.pickup();
+        saveProfile(); audio(); sfx.buy();
         renderShop();
       });
     }
@@ -3263,7 +3316,7 @@ function renderShop(){
         profile.coins -= p.cost;
         profile.pets.push(p.id);
         profile.pet = p.id;
-        saveProfile(); audio(); sfx.pickup();
+        saveProfile(); audio(); sfx.buy();
         renderShop();
       });
     }
@@ -3301,7 +3354,7 @@ function renderPerks(){
         if(profile.coins < cost) return;
         profile.coins -= cost;
         profile.upg[u.id]++;
-        saveProfile(); audio(); sfx.pickup();
+        saveProfile(); audio(); sfx.buy();
         renderPerks();
       });
     }
@@ -3415,7 +3468,7 @@ function renderDiffRow(){
 function renderMusicRow(){
   const row = $('musicRow');
   row.innerHTML = '';
-  const items = [['dance','💃 ДАНС'],['rock','🎸 РОК'],['chill','🌙 ЧИЛЛ'],[null,'🔇 ВЫКЛ']];
+  const items = [['dance','💃 ДАНС'],['rock','🎸 РОК'],['chill','🌙 ЧИЛЛ'],['dendy','🕹️ ДЕНДИ'],[null,'🔇 ВЫКЛ']];
   for(const [id, label] of items){
     const b = document.createElement('button');
     const active = id === null ? !music.on : (music.on && music.track === id);
@@ -3476,7 +3529,7 @@ function renderClassRow(){
         profile.coins -= cls.cost;
         profile.classes.push(id);
         profile.tank = id;
-        audio(); sfx.pickup();
+        audio(); sfx.buy();
       } else {
         $('classDesc').textContent = 'Нужно ' + cls.cost + ' 🪙 — зарабатывай очки в боях!';
         return;

@@ -223,6 +223,7 @@ html{height:100%}
   <p>Прошёл все сто волн? Герой! После победы открывается бесконечное ВЫЖИВАНИЕ: тот же бой, враги всё злее, а рейтинг запомнит, докуда ты дополз.</p>
   <p>Сложность: на ХАРДЕ враги в 1.35 раза живучее и бьют в 1.25 раза больнее, зато монеты ×1.5 и каждый пройденный уровень даёт 2 🏆. КОШМАР (HP ×1.8, урон ×1.6, монеты ×2.5, кубки ×3) открывается после прохождения кампании. Волны ВЫЖИВАНИЯ (после 100-й) дают двойные кубки.</p>
   <p>Берегись: снайпер светит красным лазером (увидел точку на броне — уезжай!), камикадзе обнимается со взрывом, миномётчик и дроны бомбят по красным кругам. А медик с крестом лечит своих — такого выбивай первым, нечего.</p>
+  <p>Поле боя — живое: красные бочки взрываются от выстрела (замани врагов и подорви, но сам отойди!), камни крошатся и прикрывают от пуль. В болоте топи вязнут, на вулкане лавовые трещины жгут, в джунглях враги прячутся в зарослях — у каждой земли свой характер.</p>
   <p>⚡ Супер-способность «Ударная волна» заряжается убийствами (жёлтая полоска под здоровьем): сметает все вражеские снаряды и бомбы и бьёт всех вокруг. Активация — <b>Q</b> на компьютере или жёлтая кнопка над огнём на телефоне.</p>
   <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины, классы танков и питомцев: Напарник стреляет по врагам, Ремонтник чинит твой танк.</p>
   <button class="btn gray" id="helpBack">НАЗАД</button>
@@ -270,7 +271,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v48';
+const GAME_VERSION = 'v49';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -285,11 +286,15 @@ function makeScenery(){
   const n = Math.round(W*H/36000);
   for(let i=0;i<n;i++){
     const r = Math.random();
+    const kind = r<0.3 ? 'crater' : r<0.58 ? 'bush' : r<0.78 ? 'rock' : 'spec';
+    const s = 0.7+Math.random()*0.7;
     decor.push({
       x: Math.random()*(W-40)+20, y: Math.random()*(H-40)+20,
       // spec — фирменный декор биома (кактус, льдина, кристалл...)
-      kind: r<0.3 ? 'crater' : r<0.58 ? 'bush' : r<0.78 ? 'rock' : 'spec',
-      s: 0.7+Math.random()*0.7, a: Math.random()*Math.PI*2
+      kind, s, a: Math.random()*Math.PI*2,
+      // камни — разрушаемые укрытия (блокируют снаряды), spec бьётся в части биомов
+      hp: kind === 'rock' ? 3 : (kind === 'spec' ? 2 : 0),
+      rad: (kind === 'rock' ? 13 : 10)*s
     });
   }
   // мягкий свет в центре поля — объём вместо плоской заливки
@@ -950,6 +955,7 @@ const BIOMES = [
   { name:'ВУЛКАН',        ground:'#2b1c1a', grid:'#38231f', patch:'#221513', bush:['#5a2c20','#743828'], rock:['#5c4038','#705048'], crater:['#3a1410','#7a3020','#c2402a'] }
 ];
 function biomeFor(n){ return BIOMES[Math.floor((n-1)/10) % BIOMES.length]; } // после 100-й биомы идут по кругу
+function biomeIdx(n){ return Math.floor((n-1)/10) % BIOMES.length; }
 
 // ---------- 10 уникальных боссов: облик + поведение ----------
 // dash — рывки к игроку; drones — запускает дроны-бомбардировщики;
@@ -1022,7 +1028,7 @@ const player = {
 };
 const pet = { x:0, y:0, a:0, cd:0, t:0 };
 let bullets = [], enemies = [], pickups = [], particles = [], tracks = [], floats = [];
-let drones = [], bombs = [];
+let drones = [], bombs = [], barrels = [];
 let boss = null;
 let waveBanner = { text:'', t:0 };
 let minionTimer = 0;
@@ -1170,6 +1176,17 @@ function startWave(n){
   state.wave = n;
   saveCheckpoint(n);
   if(waveClearT){ clearTimeout(waveClearT); waveClearT = null; }
+  // новая декада — новое поле: свежий декор (и починка разрушенного)
+  if(n % 10 === 1) makeScenery();
+  // взрывные бочки: 2-3 на волну, не рядом с игроком
+  barrels = [];
+  const bnum = 2 + Math.floor(rand(0, 2));
+  for(let i=0;i<bnum;i++){
+    let bx3, by3, tr3 = 0;
+    do { bx3 = rand(60, W-60); by3 = rand(60, H-60); tr3++; }
+    while(dist(bx3, by3, player.x, player.y) < 170 && tr3 < 20);
+    barrels.push({ x:bx3, y:by3, fuseT:null });
+  }
   const surv = n > TOTAL_WAVES; // режим выживания после сотой
   const dTag = profile.diff === 'norm' ? '' : ' · ' + currentDiff().name;
   if(isBossWave(n)){
@@ -1212,7 +1229,7 @@ function applyProgress(wave){
 
 function resetGame(wave, score, hp){
   bullets = []; enemies = []; pickups = []; particles = []; tracks = []; floats = []; boss = null;
-  drones = []; bombs = [];
+  drones = []; bombs = []; barrels = [];
   applyProgress(wave ?? 1);
   player.x = W*0.5; player.y = H*0.65;
   player.hp = Math.min(player.maxHp, hp ?? player.maxHp);
@@ -1472,9 +1489,23 @@ function flash(x, y, a){
 function addFloat(x, y, txt, color){
   floats.push({ x, y, txt, color: color||'#f1c40f', t:0 });
 }
+// следы траков в цвет грунта: песок, снег, болотная жижа, пепел
+const TRACK_STYLE = {
+  1:['#57482c',0.22], 2:['#eef6fc',0.28], 3:['#0a140e',0.3],
+  4:['#3a2a20',0.2], 7:['#e8f2f8',0.24], 9:['#1a0f0c',0.22]
+};
+// топи болота замедляют любую технику
+function terrainMult(x, y){
+  if(biomeIdx(state.wave) !== 3) return 1;
+  for(const d of decor){
+    if(d.kind === 'spec' && dist(x, y, d.x, d.y) < 16*d.s + 8) return 0.65;
+  }
+  return 1;
+}
 function leaveTrack(t, scale){
   if(REDUCED) return;
-  tracks.push({ x:t.x, y:t.y, a:t.hull, s:scale, t:0 });
+  const st = TRACK_STYLE[biomeIdx(state.wave)] || ['#0d1114', 0.16];
+  tracks.push({ x:t.x, y:t.y, a:t.hull, s:scale, t:0, col:st[0], al:st[1] });
   if(tracks.length > 400) tracks.splice(0, tracks.length - 400);
   // пыль из-под гусениц
   if(Math.random() < 0.3){
@@ -1565,6 +1596,9 @@ function beamTick(dt){
       if(boss.hp <= 0){ onBossKilled(); return; }
     }
   }
+  for(let j = barrels.length-1; j >= 0; j--){ // луч поджигает бочки мгновенно
+    if(hitAt(barrels[j].x, barrels[j].y, 10) >= 0) explodeBarrel(j);
+  }
   state.beamVis = 0.08; // рендеру: луч сейчас горит
   state.beamSfx = (state.beamSfx || 0) - dt;
   if(state.beamSfx <= 0){ sfx.beamHum(); state.beamSfx = 0.085; }
@@ -1626,6 +1660,32 @@ function destroyDrone(j){
   checkWaveClear();
 }
 
+// взрывная бочка: большой взрыв, урон всем вокруг, цепная реакция
+function explodeBarrel(i){
+  const b = barrels[i];
+  barrels.splice(i, 1);
+  bigBoom(b.x, b.y, '#ff9f43'); sfx.boom(); vibrate(60);
+  state.shake = Math.min(state.shake + (REDUCED?0:5), 10);
+  const R = 95;
+  for(let j = enemies.length-1; j >= 0; j--){
+    const e = enemies[j];
+    if(dist(b.x, b.y, e.x, e.y) < R + e.r){ e.hp -= 55; if(e.hp <= 0) destroyEnemy(j); }
+  }
+  for(let j = drones.length-1; j >= 0; j--){
+    const d = drones[j];
+    if(dist(b.x, b.y, d.x, d.y) < R + d.r){ d.hp -= 55; if(d.hp <= 0) destroyDrone(j); }
+  }
+  if(boss && !boss.entering && dist(b.x, b.y, boss.x, boss.y) < R + boss.r){
+    boss.hp -= 70;
+    if(boss.hp <= 0) onBossKilled();
+  }
+  if(dist(b.x, b.y, player.x, player.y) < R*0.8 + player.r) damagePlayer(12);
+  // цепная реакция: соседние бочки загораются с задержкой
+  for(const ob of barrels){
+    if(ob.fuseT == null && dist(b.x, b.y, ob.x, ob.y) < R + 12) ob.fuseT = rand(0.15, 0.4);
+  }
+}
+
 // ---------- супер-способность: ударная волна ----------
 function addSuper(v){
   if(state.mode !== 'play') return;
@@ -1642,6 +1702,10 @@ function useSuper(){
   player.superCharge = 0;
   const R = 360;
   sfx.superBoom(); vibrate(220);
+  // бочки в радиусе детонируют следом
+  for(const ob of barrels){
+    if(ob.fuseT == null && dist(player.x, player.y, ob.x, ob.y) < R) ob.fuseT = rand(0.1, 0.5);
+  }
   state.shake = Math.min(state.shake + (REDUCED?0:10), 14);
   if(!REDUCED){
     for(let i=0;i<3;i++)
@@ -1738,8 +1802,9 @@ function update(dt){
   const mlen = Math.hypot(mx,my);
   if(mlen > 0.01){
     const nx = mx/Math.max(mlen,1), ny = my/Math.max(mlen,1);
-    player.x += nx * player.speed * dt;
-    player.y += ny * player.speed * dt;
+    const tmp = terrainMult(player.x, player.y); // топь вязнет
+    player.x += nx * player.speed * tmp * dt;
+    player.y += ny * player.speed * tmp * dt;
     player.hull = lerpAng(player.hull, Math.atan2(ny,nx), Math.min(1, dt*10));
     player.trackPhase = (player.trackPhase || 0) + player.speed*dt*0.22;
     player.trackT -= dt;
@@ -1923,7 +1988,8 @@ function update(dt){
     const strafeK = (e.type === 'sniper' || e.type === 'mortar') ? 0.18 : 0.45;
     vx += Math.cos(a + Math.PI/2) * e.sp*strafeK * e.strafe;
     vy += Math.sin(a + Math.PI/2) * e.sp*strafeK * e.strafe;
-    e.x += vx*dt; e.y += vy*dt;
+    const tme = terrainMult(e.x, e.y); // топь честно вязнет и для врагов
+    e.x += vx*tme*dt; e.y += vy*tme*dt;
     if(e.x < e.r || e.x > W-e.r) e.strafe *= -1;
     if(e.y < e.r || e.y > H-e.r) e.strafe *= -1;
     e.x = Math.max(e.r, Math.min(W-e.r, e.x));
@@ -2043,6 +2109,34 @@ function update(dt){
       d.dropT = rand(2.4, 3.4);
     }
   }
+  // вулкан: лавовые трещины жгут всех, кто на них стоит
+  if(biomeIdx(state.wave) === 9){
+    const onLava = (x, y) => {
+      for(const d of decor){ if(d.kind === 'spec' && dist(x, y, d.x, d.y) < 15*d.s + 6) return true; }
+      return false;
+    };
+    state.lavaT = (state.lavaT || 0) - dt;
+    if(state.lavaT <= 0 && onLava(player.x, player.y)){
+      damagePlayer(3);
+      state.lavaT = 0.5;
+    }
+    for(let j = enemies.length-1; j >= 0; j--){
+      const e = enemies[j];
+      if(onLava(e.x, e.y)){
+        e.hp -= 8*dt;
+        if(!REDUCED && Math.random() < dt*6)
+          particles.push({ x:e.x+rand(-8,8), y:e.y+rand(-8,8), vx:0, vy:-30, life:0.4, t:0, r:2, color:'#ff9f43' });
+        if(e.hp <= 0) destroyEnemy(j);
+      }
+    }
+  }
+
+  // бочки с подожжённым фитилём
+  for(let i = barrels.length-1; i >= 0; i--){
+    const bb = barrels[i];
+    if(bb.fuseT != null){ bb.fuseT -= dt; if(bb.fuseT <= 0) explodeBarrel(i); }
+  }
+
   // бомбы: телеграф, затем взрыв по области
   if(!frozen) for(let i = bombs.length-1; i >= 0; i--){
     const bm = bombs[i];
@@ -2070,6 +2164,30 @@ function update(dt){
     const b = bullets[i];
     b.x += b.vx*dt; b.y += b.vy*dt;
     if(b.x < -20 || b.x > W+20 || b.y < -20 || b.y > H+20){ bullets.splice(i,1); continue; }
+    // препятствия: бочки взрываются, камни крошатся и держат удар
+    let hitObst = false;
+    for(let j = barrels.length-1; j >= 0; j--){
+      if(dist(b.x, b.y, barrels[j].x, barrels[j].y) < 11 + b.r){ explodeBarrel(j); hitObst = true; break; }
+    }
+    if(!hitObst){
+      const BIc = biomeIdx(state.wave);
+      for(let j = decor.length-1; j >= 0; j--){
+        const dd = decor[j];
+        if(!dd.hp) continue;
+        // spec-декор бьётся только там, где он «твёрдый»: кактус, ёлка, пень, льдина
+        if(dd.kind === 'spec' && BIc !== 1 && BIc !== 2 && BIc !== 6 && BIc !== 7) continue;
+        if(dist(b.x, b.y, dd.x, dd.y) < dd.rad + b.r){
+          dd.hp--;
+          explode(b.x, b.y, '#8d8578', 4); sfx.hit();
+          if(dd.hp <= 0){
+            explode(dd.x, dd.y, (BIc === 2 || BIc === 7) ? '#dfeef8' : '#6b5a42', 12);
+            decor.splice(j, 1);
+          }
+          hitObst = true; break;
+        }
+      }
+    }
+    if(hitObst){ bullets.splice(i, 1); continue; }
     if(b.from === 'p'){
       let consumed = false;
       for(let j = enemies.length-1; j >= 0; j--){
@@ -3001,17 +3119,57 @@ function render(){
     ctx.restore();
   }
 
+  // тени облаков плывут по полю
+  if(!REDUCED){
+    ctx.fillStyle = '#000';
+    for(let i=0;i<3;i++){
+      const cw2 = 170 + (i*73) % 90;
+      const cx3 = ((state.time*(7 + i*3) + i*517) % (W + cw2*2)) - cw2;
+      const cy3 = (i*0.33*H + state.time*2.5 + i*140) % H;
+      ctx.globalAlpha = 0.065;
+      ctx.beginPath(); ctx.ellipse(cx3, cy3, cw2, cw2*0.55, i, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 0.045;
+      ctx.beginPath(); ctx.ellipse(cx3 + 24, cy3 + 12, cw2*0.7, cw2*0.4, i, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // track marks
   for(const tr of tracks){
     ctx.save();
     ctx.translate(tr.x, tr.y); ctx.rotate(tr.a);
-    ctx.globalAlpha = 0.16 * (1 - tr.t/3);
-    ctx.fillStyle = '#0d1114';
+    ctx.globalAlpha = (tr.al || 0.16) * (1 - tr.t/3);
+    ctx.fillStyle = tr.col || '#0d1114';
     ctx.fillRect(-4*tr.s, -17*tr.s, 8*tr.s, 6*tr.s);
     ctx.fillRect(-4*tr.s, 11*tr.s, 8*tr.s, 6*tr.s);
     ctx.restore();
   }
   ctx.globalAlpha = 1;
+
+  // взрывные бочки
+  for(const bb of barrels){
+    ctx.save();
+    ctx.translate(bb.x, bb.y);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(2, 4, 11, 8, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#8a2420';
+    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#b3342a';
+    ctx.beginPath(); ctx.arc(-1.5, -1.5, 8, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#f6d32d'; ctx.lineWidth = 2.6; // предупредительное кольцо
+    ctx.beginPath(); ctx.arc(0, 0, 6.2, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = '#2b1410';
+    ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffffff40';
+    ctx.beginPath(); ctx.ellipse(-3, -3, 3.5, 2.2, -0.6, 0, Math.PI*2); ctx.fill();
+    if(bb.fuseT != null){ // фитиль горит!
+      ctx.globalAlpha = Math.sin(state.time*30) > 0 ? 0.9 : 0.2;
+      ctx.fillStyle = '#ffd84d';
+      ctx.beginPath(); ctx.arc(0, -13, 2.4, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
 
   for(const m of pickups) drawPickup(m);
 
@@ -3078,9 +3236,17 @@ function render(){
 
   // tanks
   if(state.mode === 'play' || state.mode === 'pause' || state.mode === 'menu'){
+    // джунгли: враги прячутся в зарослях и проявляются вблизи
+    const jungle = biomeIdx(state.wave) === 5 && state.mode !== 'menu';
     for(const e of enemies){
       const T = ETYPES[e.type];
-      drawTank(e, { hullColor:T.color, darkColor:T.dark, scale:T.scale, angry: e.type !== 'medic', blink:e.blink, fx:T.fx });
+      let efx = T.fx;
+      if(jungle){
+        const dj = dist(player.x, player.y, e.x, e.y);
+        const al = Math.max(0.15, Math.min(1, (380 - dj)/150));
+        if(al < 1) efx = Object.assign({}, T.fx, { alpha: al });
+      }
+      drawTank(e, { hullColor:T.color, darkColor:T.dark, scale:T.scale, angry: e.type !== 'medic', blink:e.blink, fx:efx });
       if(e.type === 'kam'){
         // кольцо тревоги: вращающийся пунктир, у самого — мигающий заряд
         ctx.save();

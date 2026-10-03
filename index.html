@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v34';
+const GAME_VERSION = 'v35';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -697,12 +697,15 @@ const music = (() => {
     // Мелодия оригинальная, скопированы только приёмы эпохи: скачки́ октав,
     // бодрые пробежки и ответы второго голоса на слабые доли.
     dendy: {
-      name: 'ДЕНДИ', bpm: 160, leadType: 'square', leadVol: 0.03, bassVol: 0.05, harmVol: 0.016,
+      // лид на октаву выше ДАНСа, отрывистые 16-е (leadLen), темп заметно бодрее —
+      // «чирикающий» верх NES, чтобы не путался с данс-треком
+      name: 'ДЕНДИ', bpm: 168, leadType: 'square', leadVol: 0.024, leadLen: 0.95,
+      bassVol: 0.05, harmVol: 0.016,
       lead: [
-        72,76,79,76, 72,0,67,0, 69,71,72,74, 76,0,72,0,
-        77,76,74,76, 77,0,74,0, 79,77,76,74, 76,0,0,0,
-        76,79,84,79, 81,79,76,72, 74,76,77,74, 71,0,67,0,
-        72,74,76,77, 79,0,76,0, 74,0,71,0, 72,0,0,0
+        84,88,91,88, 84,0,79,0, 81,83,84,86, 88,0,84,0,
+        89,88,86,88, 89,0,86,0, 91,89,88,86, 88,0,0,0,
+        88,91,96,91, 93,91,88,84, 86,88,89,86, 83,0,79,0,
+        84,86,88,89, 91,0,88,0, 86,0,83,0, 84,0,0,0
       ],
       harm: [
         0,0,64,0, 0,0,67,0, 0,0,64,0, 0,0,67,0,
@@ -716,7 +719,7 @@ const music = (() => {
         36,48,36,48, 41,53,43,55,
         36,48,43,55, 36,43,36,36
       ],
-      kick: i => i % 8 === 0 || i % 16 === 6, snare: i => i % 8 === 4, hat: i => i % 2 === 1
+      kick: i => i % 8 === 0 || i % 16 === 6, snare: i => i % 8 === 4, hat: i => i % 2 === 0
     }
   };
   function cur(){ return TRACKS[trackId] || TRACKS.dance; }
@@ -758,7 +761,7 @@ const music = (() => {
     while(nextTime < AC.currentTime + 0.3){
       const i = step % 64;
       const m = T.lead[i];
-      if(m) osc(T.leadType, f(m), nextTime, STEP*1.7, T.leadVol);
+      if(m) osc(T.leadType, f(m), nextTime, STEP*(T.leadLen || 1.7), T.leadVol);
       if(T.harm){ // второй квадратный голос (NES pulse 2)
         const h = T.harm[i];
         if(h) osc('square', f(h), nextTime, STEP*1.4, T.harmVol || 0.016);

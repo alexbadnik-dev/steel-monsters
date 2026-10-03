@@ -254,7 +254,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v32';
+const GAME_VERSION = 'v33';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1837,7 +1837,17 @@ function update(dt){
     const bm = bombs[i];
     bm.t += dt;
     if(bm.t >= bm.fuse){
-      explode(bm.x, bm.y, '#ff9f43', 22); sfx.boom();
+      bigBoom(bm.x, bm.y, '#ff9f43');
+      if(!REDUCED){
+        // столб земли и пыли из воронки — в цветах текущего биома
+        const soil = biomeFor(state.wave).crater;
+        for(let k=0;k<8;k++){
+          particles.push({ x:bm.x+rand(-10,10), y:bm.y+rand(-4,4), vx:rand(-55,55), vy:rand(-250,-120),
+            g:460, life:rand(.5,.85), t:0, r:rand(2.5,5), color: soil[k%soil.length] });
+        }
+        particles.push({ x:bm.x, y:bm.y, vx:0, vy:0, ring:true, r:12, grow:220, life:0.3, t:0, color:'#c9b18a' });
+      }
+      sfx.boom();
       state.shake = Math.min(state.shake + (REDUCED?0:5), 10);
       if(dist(bm.x, bm.y, player.x, player.y) < bm.r + player.r*0.4) damagePlayer(bm.dmg);
       bombs.splice(i,1);
@@ -2541,26 +2551,63 @@ function render(){
 
   for(const m of pickups) drawPickup(m);
 
-  // телеграф падающих бомб
+  // телеграф падающих бомб: зона поражения заполняется, бомба снижается
   for(const bm of bombs){
     const k = Math.min(1, bm.t/bm.fuse);
+    ctx.fillStyle = '#ff5540';
+    ctx.globalAlpha = 0.06 + 0.1*k;
+    ctx.beginPath(); ctx.arc(bm.x, bm.y, bm.r, 0, Math.PI*2); ctx.fill();
     ctx.strokeStyle = '#ff5540';
-    ctx.globalAlpha = 0.45 + 0.3*Math.sin(state.time*18);
-    ctx.lineWidth = 2 + 2*k;
-    ctx.beginPath(); ctx.arc(bm.x, bm.y, bm.r*(0.35 + 0.65*k), 0, Math.PI*2); ctx.stroke();
+    ctx.globalAlpha = 0.5 + 0.3*Math.sin(state.time*18);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bm.x, bm.y, bm.r, 0, Math.PI*2); ctx.stroke();
+    ctx.lineWidth = 2 + 2.5*k;
+    ctx.beginPath(); ctx.arc(bm.x, bm.y, bm.r*k, 0, Math.PI*2); ctx.stroke();
+    ctx.lineWidth = 2; ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(bm.x - 6, bm.y); ctx.lineTo(bm.x + 6, bm.y);
+    ctx.moveTo(bm.x, bm.y - 6); ctx.lineTo(bm.x, bm.y + 6);
+    ctx.stroke();
     ctx.globalAlpha = 1;
+    // сама бомба падает к точке удара
+    ctx.fillStyle = '#20262c';
+    ctx.beginPath(); ctx.arc(bm.x + 18*(1-k), bm.y - 120*(1-k), 3.5, 0, Math.PI*2); ctx.fill();
   }
 
-  // лазерные прицелы снайперов (под танками)
+  // лазерные прицелы снайперов (под танками): свечение + ядро + точка на цели
   for(const e of enemies){
     if(e.type === 'sniper' && e.lockA != null){
+      const x0 = e.x + Math.cos(e.lockA)*(e.r+6), y0 = e.y + Math.sin(e.lockA)*(e.r+6);
+      const x1 = e.x + Math.cos(e.lockA)*1400, y1 = e.y + Math.sin(e.lockA)*1400;
+      const pulse = 0.5 + 0.5*Math.abs(Math.sin(state.time*16));
       ctx.save();
-      ctx.globalAlpha = 0.35 + 0.3*Math.abs(Math.sin(state.time*16));
-      ctx.strokeStyle = '#ff5540'; ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(e.x + Math.cos(e.lockA)*(e.r+6), e.y + Math.sin(e.lockA)*(e.r+6));
-      ctx.lineTo(e.x + Math.cos(e.lockA)*1400, e.y + Math.sin(e.lockA)*1400);
-      ctx.stroke();
+      ctx.lineCap = 'round';
+      // широкое мягкое свечение луча
+      ctx.strokeStyle = '#ff5540';
+      ctx.globalAlpha = 0.09 + 0.08*pulse;
+      ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      // яркое ядро
+      ctx.globalAlpha = 0.35 + 0.35*pulse;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      // излучатель у дула
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#ff8d7a';
+      ctx.beginPath(); ctx.arc(x0, y0, 2.6, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(x0, y0, 1.2, 0, Math.PI*2); ctx.fill();
+      // красная точка на танке, когда луч лёг на цель
+      const px2 = player.x - e.x, py2 = player.y - e.y;
+      const proj = px2*Math.cos(e.lockA) + py2*Math.sin(e.lockA);
+      if(proj > 0){
+        const ox = e.x + Math.cos(e.lockA)*proj, oy = e.y + Math.sin(e.lockA)*proj;
+        if(dist(ox, oy, player.x, player.y) < 20){
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = '#ff2a1a';
+          ctx.beginPath(); ctx.arc(ox, oy, 2.6 + pulse*1.6, 0, Math.PI*2); ctx.fill();
+        }
+      }
       ctx.restore();
     }
   }
@@ -2628,27 +2675,41 @@ function render(){
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r*0.45, 0, Math.PI*2); ctx.fill();
   }
 
-  // дроны (летят над полем боя)
+  // дроны-«герани»: большое дельта-крыло, летят над полем боя
   for(const d of drones){
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.beginPath(); ctx.ellipse(d.x + 10, d.y + 16, 13, 6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(d.x + 10, d.y + 18, 16, 6.5, 0, 0, Math.PI*2); ctx.fill();
     ctx.save();
     ctx.translate(d.x, d.y + Math.sin(d.t*5)*2);
     ctx.rotate(d.a);
-    // дельта-крыло
-    ctx.fillStyle = '#7a8694';
+    // дельта-крыло во весь корпус
+    ctx.fillStyle = '#3d444d';
     ctx.beginPath();
-    ctx.moveTo(15,0); ctx.lineTo(-10,-11); ctx.lineTo(-5,0); ctx.lineTo(-10,11);
+    ctx.moveTo(22, 0);          // нос
+    ctx.lineTo(-13, -17);       // левая законцовка
+    ctx.lineTo(-9, 0);          // вырез у хвоста
+    ctx.lineTo(-13, 17);        // правая законцовка
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = '#4e5864';
-    ctx.beginPath(); ctx.moveTo(15,0); ctx.lineTo(0,-4); ctx.lineTo(0,4); ctx.closePath(); ctx.fill();
-    // пропеллер
-    ctx.strokeStyle = '#c8d2da'; ctx.lineWidth = 2;
-    const pa = d.t*26;
-    ctx.beginPath();
-    ctx.moveTo(-8, -7*Math.sin(pa)); ctx.lineTo(-8, 7*Math.sin(pa));
-    ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+    // светлая грань на левой плоскости
+    ctx.fillStyle = 'rgba(255,255,255,0.09)';
+    ctx.beginPath(); ctx.moveTo(22,0); ctx.lineTo(-13,-17); ctx.lineTo(-7,-5); ctx.closePath(); ctx.fill();
+    // фюзеляж-гребень по центру
+    ctx.fillStyle = '#4c545e';
+    ctx.beginPath(); ctx.moveTo(22,0); ctx.lineTo(-10,-3.5); ctx.lineTo(-10,3.5); ctx.closePath(); ctx.fill();
+    // носовой обтекатель (боевая часть)
+    ctx.fillStyle = '#272c33';
+    ctx.beginPath(); ctx.moveTo(22,0); ctx.lineTo(12,-2.6); ctx.lineTo(12,2.6); ctx.closePath(); ctx.fill();
+    // кили на законцовках
+    ctx.fillStyle = '#272c33';
+    ctx.fillRect(-16, -18.5, 7, 3);
+    ctx.fillRect(-16, 15.5, 7, 3);
+    // толкающий винт сзади: мелькающая лопасть + размытый диск
+    const pa = Math.sin(d.t*30);
+    ctx.strokeStyle = 'rgba(200,210,218,0.8)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-12, -8*pa); ctx.lineTo(-12, 8*pa); ctx.stroke();
+    ctx.strokeStyle = 'rgba(200,210,218,0.25)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(-12, 0, 8, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
     if(d.hp < d.maxHp){
       const w = 26, frac = Math.max(0, d.hp/d.maxHp);

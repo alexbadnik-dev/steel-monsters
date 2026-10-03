@@ -183,6 +183,7 @@ html{height:100%}
     <input type="color" id="skinColor" value="#58d97b">
     <button class="btn gray small" id="colorReset">СБРОС</button>
   </div>
+  <div class="menurow" id="shopTabs"></div>
   <div class="shopgrid" id="shopGrid"></div>
   <button class="btn gray" id="shopBack">НАЗАД</button>
 </div>
@@ -269,7 +270,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v45';
+const GAME_VERSION = 'v46';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -373,6 +374,14 @@ const SKINS = [
   { id:'rainbow', name:'Хамелеон',   cost:2000, hull:'#58d97b', dark:'#1f7a40', fx:{ rainbow:true } }
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
+// разделы магазина
+const SKIN_CATS = {
+  color: ['green','blue','desert','pink','violet','orange'],
+  style: ['camo','melon','taxi','tiger','pirate','double','stealth','robot','police','lava','neon','ufo','gold','rainbow'],
+  hero:  ['iron','spider','ghost','gamma','captain','thunder','panther','speed','jester','super','amazon','poseidon','lantern','nightcar'],
+  tale:  ['kolobok','bogatyr','yaga','gorynych','firebird','emelya']
+};
+function skinCat(id){ for(const k in SKIN_CATS){ if(SKIN_CATS[k].includes(id)) return k; } return 'style'; }
 
 // ---------- питомцы ----------
 const PETS = [
@@ -3718,13 +3727,37 @@ $('winMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuB
 // ---------- магазин ----------
 let shopPrevList = []; // живые превью: перерисовываются каждый кадр, пока магазин открыт
 let perkPrevList = []; // живые ящики на экране прокачки
+let shopTab = 'all';   // раздел магазина
 function renderShop(){
   $('shopCoins').textContent = '🪙 ' + profile.coins + ' · монеты за очки в бою (10 очков = 1 🪙)';
   $('skinColor').value = profile.customColor || skinById(profile.equipped).hull;
+  // вкладки разделов
+  const tabs = $('shopTabs');
+  tabs.innerHTML = '';
+  const STABS = [['all','ВСЕ'],['mine','МОИ'],['color','ЦВЕТА'],['style','СТИЛЬ'],['hero','ГЕРОИ'],['tale','СКАЗКИ']];
+  for(const [id, label] of STABS){
+    const b = document.createElement('button');
+    b.className = 'classbtn' + (shopTab === id ? ' sel' : '');
+    b.style.minWidth = '0';
+    b.style.flexDirection = 'row';
+    b.textContent = label;
+    b.addEventListener('click', ()=>{ shopTab = id; renderShop(); });
+    tabs.append(b);
+  }
   const grid = $('shopGrid');
   grid.innerHTML = '';
   shopPrevList = [];
-  for(const s of SKINS){
+  const list = SKINS.filter(s =>
+    shopTab === 'all' ? true :
+    shopTab === 'mine' ? profile.skins.includes(s.id) :
+    skinCat(s.id) === shopTab);
+  if(!list.length){
+    const p = document.createElement('p');
+    p.className = 'classdesc';
+    p.textContent = 'Тут пока пусто — загляни в другие разделы!';
+    grid.append(p);
+  }
+  for(const s of list){
     const card = document.createElement('div'); card.className = 'skincard';
     // превью — настоящий танк в этом скине
     const prev = document.createElement('canvas');

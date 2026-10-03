@@ -271,7 +271,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v50';
+const GAME_VERSION = 'v51';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -2136,15 +2136,28 @@ function update(dt){
   if(BIu === 1){
     if(state.stormT > 0){
       state.stormT -= dt;
+      // шум ветра: частые порывы с плавающей высотой
       state.stormSfx = (state.stormSfx || 0) - dt;
-      if(state.stormSfx <= 0){ noiseBurst(.3, .02, 'lowpass', 600, -200); state.stormSfx = 0.25; }
+      if(state.stormSfx <= 0){
+        noiseBurst(.4, .055, 'lowpass', rand(450, 800), rand(-280, -80));
+        state.stormSfx = 0.2;
+      }
+      // подвывание: редкий низкий гул со скольжением
+      state.stormHowl = (state.stormHowl || 0) - dt;
+      if(state.stormHowl <= 0){
+        beep(130 + rand(0, 70), .7, 'sine', .04, rand(-70, 50));
+        state.stormHowl = rand(0.9, 1.6);
+      }
     } else if(state.stormNext > 0){
       state.stormNext -= dt;
       if(state.stormNext <= 0){
         state.stormT = 5;
         state.stormNext = rand(14, 22);
         waveBanner = { text: '🌪 ПЕСЧАНАЯ БУРЯ!', t: 1.8 };
-        noiseBurst(.6, .05, 'lowpass', 500, -300);
+        // налетела: мощный порыв + вой
+        noiseBurst(1.1, .12, 'lowpass', 750, -450);
+        beep(220, .9, 'sine', .05, -120);
+        setTimeout(()=> noiseBurst(.7, .08, 'lowpass', 550, -250), 350);
       }
     }
   } else {

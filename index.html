@@ -280,7 +280,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v64';
+const GAME_VERSION = 'v65';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -556,7 +556,7 @@ function cloudSaveSoon(){
 }
 async function cloudSaveNow(){
   try{
-    await fetch(ONLINE.url + '/rest/v1/profiles', {
+    await fetchT(ONLINE.url + '/rest/v1/profiles', {
       method: 'POST',
       headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key,
                  'Content-Type': 'application/json',
@@ -569,8 +569,8 @@ async function cloudRestore(){
   const nm = (profile.name || '').trim().toLowerCase();
   if(!nm){ alert('Сначала впиши имя танкиста — по нему и найдём профиль.'); return; }
   try{
-    const r = await fetch(ONLINE.url + '/rest/v1/profiles?name=eq.' + encodeURIComponent(nm) + '&select=data',
-      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } });
+    const r = await fetchT(ONLINE.url + '/rest/v1/profiles?name=eq.' + encodeURIComponent(nm) + '&select=data',
+      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
     const rows = r.ok ? await r.json() : [];
     if(!rows.length){ alert('Облачного профиля с именем «' + profile.name + '» пока нет.'); return; }
     const d = rows[0].data || {};
@@ -600,16 +600,23 @@ const ONLINE = {
   key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsZ3F5bHl3bWJrd2FvanNnc3R5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzM3NzEsImV4cCI6MjEwNjU0OTc3MX0.roJLpsi6topofBTuq9kHpM4bJ33pSGXX4Y-IDu5LqU0'
 };
 function onlineEnabled(){ return !!(ONLINE.url && ONLINE.key); }
+// fetch с таймаутом: на хилом 4G запрос может висеть минуту — не ждём дольше ms
+function fetchT(url, opts, ms){
+  const ac = new AbortController();
+  const tm = setTimeout(()=> ac.abort(), ms || 8000);
+  return fetch(url, Object.assign({ signal: ac.signal }, opts || {}))
+    .finally(()=> clearTimeout(tm));
+}
 async function submitOnline(e){
   if(!onlineEnabled()) return false;
   const post = async body => {
     try{
-      const r = await fetch(ONLINE.url + '/rest/v1/scores', {
+      const r = await fetchT(ONLINE.url + '/rest/v1/scores', {
         method: 'POST',
         headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key,
                    'Content-Type': 'application/json', Prefer: 'return=minimal' },
         body: JSON.stringify(body)
-      });
+      }, 8000);
       return r.status;
     }catch(err){ return 0; }
   };
@@ -647,8 +654,8 @@ async function fetchOnline(){
   try{
     // сперва пробуем с колонкой времени; если её ещё нет в таблице — без неё
     for(const sel of ['name,score,wave,tank,diff,cups,secs', 'name,score,wave,tank,diff,cups']){
-      const r = await fetch(ONLINE.url + '/rest/v1/scores?select=' + sel + '&order=cups.desc,score.desc&limit=100',
-        { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } });
+      const r = await fetchT(ONLINE.url + '/rest/v1/scores?select=' + sel + '&order=cups.desc,score.desc&limit=100',
+        { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
       if(r.ok) return await r.json();
     }
     return null;
@@ -1848,7 +1855,8 @@ function enemyShoot(e){
   if(state.stormT > 0) a += rand(-0.22, 0.22); // в бурю прицелы плывут у всех
   const muz = e.type === 'sniper' ? e.r + 18 : e.r + 12; // у САУ ствол длиннее
   bullets.push({ x:e.x + Math.cos(a)*muz, y:e.y + Math.sin(a)*muz,
-                 vx:Math.cos(a)*e.bspd, vy:Math.sin(a)*e.bspd, from:'e', dmg:e.dmg, r:e.br });
+                 vx:Math.cos(a)*e.bspd, vy:Math.sin(a)*e.bspd, from:'e', dmg:e.dmg, r:e.br,
+                 tracer: e.type === 'sniper' }); // фирменный знак снайпера — трассер
   flash(e.x + Math.cos(a)*(e.r+14), e.y + Math.sin(a)*(e.r+14), a);
   e.recoil = 1;
   sfx.eshot(e.type);
@@ -3709,6 +3717,19 @@ function render(){
   // bullets: tracer + glow + core
   ctx.lineCap = 'round';
   for(const b of bullets){
+    if(b.tracer){
+      // трассер снайпера: вытянутая раскалённая чёрточка — ореол, тело, белое ядро у носа
+      const sp = Math.hypot(b.vx, b.vy) || 1, L = 26;
+      const ux = b.vx/sp, uy = b.vy/sp;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#ff8d6b'; ctx.globalAlpha = 0.22; ctx.lineWidth = 9;
+      ctx.beginPath(); ctx.moveTo(b.x - ux*L, b.y - uy*L); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = '#ffb36b'; ctx.globalAlpha = 0.8; ctx.lineWidth = 3.6;
+      ctx.beginPath(); ctx.moveTo(b.x - ux*L, b.y - uy*L); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = '#fff2d9'; ctx.globalAlpha = 1; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(b.x - ux*L*0.45, b.y - uy*L*0.45); ctx.lineTo(b.x, b.y); ctx.stroke();
+      continue;
+    }
     const col = b.from === 'p' ? '#f1c40f' : '#ff8d6b';
     ctx.strokeStyle = col; ctx.globalAlpha = 0.4; ctx.lineWidth = b.r*1.2;
     ctx.beginPath(); ctx.moveTo(b.x - b.vx*0.03, b.y - b.vy*0.03); ctx.lineTo(b.x, b.y); ctx.stroke();
@@ -4583,7 +4604,7 @@ function renderBoard(){
         const mw = maxWave.get(String(r3.name || 'Аноним').trim().toLowerCase()) || 0;
         if(mw > (r3.wave|0)) r3._mw = mw;
       }
-      renderBoardRows(list, uniq, true, 50); // МИР: топ-50 игроков
+      renderBoardRows(list, uniq, true, 50, true); // МИР: топ-50, тап по строке — разведка игрока
     });
     return;
   }
@@ -4596,7 +4617,7 @@ function renderBoard(){
   }
   renderBoardRows(list, rows, boardTab === 'all');
 }
-function renderBoardRows(list, rows, showTank, limit){
+function renderBoardRows(list, rows, showTank, limit, intel){
   const short = { uni:'Б', fast:'Т', heavy:'Бв' };
   const dShort = { hard:'·ХАРД', night:'·КОШМАР' };
   rows.slice(0, limit || 10).forEach((r, i)=>{
@@ -4609,8 +4630,38 @@ function renderBoardRows(list, rows, showTank, limit){
       + (dShort[r.diff] || '');
     row.querySelector('.wv').textContent = 'в.' + (r.wave|0) + (r._mw ? ' (макс ' + r._mw + ')' : '') + ' · ' + (r.score|0)
       + (r.secs ? ' · ⏱' + fmtTime(r.secs) : '');
+    if(intel){ row.style.cursor = 'pointer'; row.addEventListener('click', ()=> showPlayerIntel(r)); }
     list.append(row);
   });
+}
+// «разведка»: тап по строке МИРа — кто это, на чём играет и как прокачан
+async function showPlayerIntel(r){
+  const CLSN = { uni:'БАЛБЕС', fast:'ТРУС', heavy:'БЫВАЛЫЙ' };
+  const DIFN = { norm:'НОРМА', hard:'ХАРД', night:'КОШМАР' };
+  const lines = ['🪖 ' + String(r.name || 'Аноним').slice(0, 20),
+    'Класс: ' + (CLSN[r.tank] || '—') + ' · сложность: ' + (DIFN[r.diff] || 'НОРМА'),
+    'Волна ' + (r.wave|0) + (r._mw ? ' (макс ' + r._mw + ')' : '') + ' · ' + (r.score|0) + ' очков'
+      + (r.secs ? ' · ⏱' + fmtTime(r.secs) : '') + ' · 🏆 ' + cupsOf(r)];
+  try{
+    const nm = String(r.name || '').trim().toLowerCase();
+    if(nm && onlineEnabled()){
+      const resp = await fetchT(ONLINE.url + '/rest/v1/profiles?name=eq.' + encodeURIComponent(nm) + '&select=data',
+        { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 8000);
+      const rows2 = resp.ok ? await resp.json() : [];
+      const d = rows2[0] && rows2[0].data;
+      if(d){
+        const sk = (SKINS.find(s => s.id === d.equipped) || {}).name || '—';
+        const u = d.upg || {};
+        const ul = UPGRADES.map(x => (u[x.id]|0) > 0 ? x.name + ' ' + '●'.repeat(Math.min(3, u[x.id]|0)) : null)
+                           .filter(Boolean);
+        lines.push('— из облачного профиля —');
+        lines.push('Скин: ' + sk + (d.pet ? ' · питомец: ' + ((PETS.find(p => p.id === d.pet) || {}).name || '') : ''));
+        lines.push('Прокачка: ' + (ul.length ? ul.join(', ') : 'ничего не куплено'));
+        lines.push('Монеты: ' + (d.coins|0) + ' · лучшая волна: ' + (d.bestWave|0));
+      } else lines.push('Облачного профиля нет — играет без облака, прокачку не подсмотреть.');
+    }
+  }catch(e){ lines.push('Профиль не достался — нет связи.'); }
+  alert(lines.join('\n'));
 }
 $('boardBtn').addEventListener('click', ()=>{ renderBoard(); setOverlay('board'); });
 $('boardBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });

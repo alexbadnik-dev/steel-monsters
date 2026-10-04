@@ -158,6 +158,7 @@ html{height:100%}
   <h1>СТАЛЬНЫЕ&nbsp;МОНСТРЫ</h1>
   <p>Жестянки наступают, а у нас как раз завалялся танк. Сто волн, десять боссов, ни одного перекура — заводи!</p>
   <input id="nameInput" maxlength="16" placeholder="Имя танкиста" autocomplete="off">
+  <button class="btn gray small" id="cloudBtn">☁ ВЕРНУТЬ ПРОФИЛЬ ПО ИМЕНИ</button>
   <div class="menurow" id="classRow"></div>
   <p class="classdesc" id="classDesc"></p>
   <div class="menurow" id="diffRow"></div>
@@ -275,7 +276,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v57';
+const GAME_VERSION = 'v58';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -527,7 +528,46 @@ if(!profile.classes.includes('uni')) profile.classes.push('uni');
 // кто уже играл этим классом до введения цен — оставляем бесплатно
 if(!profile.classes.includes(profile.tank)) profile.classes.push(profile.tank);
 if(profile.pet && !profile.pets.includes(profile.pet)) profile.pet = null;
-function saveProfile(){ try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){} }
+function saveProfile(){
+  try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){}
+  cloudSaveSoon(); // и в облако — чтобы чистка браузера больше ничего не теряла
+}
+
+// ---------- облачный профиль: монеты/скины/прокачка живут и на сервере ----------
+let cloudT = null;
+function cloudSaveSoon(){
+  if(typeof onlineEnabled !== 'function' || !onlineEnabled()) return;
+  if(!profile.name || !profile.name.trim()) return;
+  clearTimeout(cloudT);
+  cloudT = setTimeout(cloudSaveNow, 4000); // копим изменения, шлём раз в 4 секунды
+}
+async function cloudSaveNow(){
+  try{
+    await fetch(ONLINE.url + '/rest/v1/profiles', {
+      method: 'POST',
+      headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key,
+                 'Content-Type': 'application/json',
+                 Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ name: profile.name.trim().toLowerCase(), data: profile })
+    });
+  }catch(e){}
+}
+async function cloudRestore(){
+  const nm = (profile.name || '').trim().toLowerCase();
+  if(!nm){ alert('Сначала впиши имя танкиста — по нему и найдём профиль.'); return; }
+  try{
+    const r = await fetch(ONLINE.url + '/rest/v1/profiles?name=eq.' + encodeURIComponent(nm) + '&select=data',
+      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } });
+    const rows = r.ok ? await r.json() : [];
+    if(!rows.length){ alert('Облачного профиля с именем «' + profile.name + '» пока нет.'); return; }
+    const d = rows[0].data || {};
+    if(!confirm('Найден профиль «' + profile.name + '»: ' + (d.coins|0) + ' 🪙, скинов: ' +
+                ((d.skins || []).length) + ', лучшая волна ' + (d.bestWave|0) + '. Загрузить его на это устройство?')) return;
+    Object.assign(profile, d, { name: profile.name });
+    try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){}
+    location.reload();
+  }catch(e){ alert('Не получилось связаться с облаком, попробуй ещё раз.'); }
+}
 
 // ---------- рейтинг (топ-10 на этом устройстве) ----------
 function loadBoard(){
@@ -4492,6 +4532,23 @@ $('perkBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu
 $('nameInput').addEventListener('input', e=>{
   profile.name = e.target.value.slice(0,16);
   saveProfile();
+});
+$('cloudBtn').addEventListener('click', cloudRestore);
+// промокод-компенсация пострадавшим от чистки браузера: вписать в имя ВЕРНИ-ВСЁ
+$('nameInput').addEventListener('change', e=>{
+  const v = e.target.value.trim().toUpperCase().replace('Ё','Е');
+  if(v !== 'ВЕРНИ-ВСЕ' && v !== 'ВЕРНИ-ВСЁ') return;
+  let used = null;
+  try{ used = localStorage.getItem('sm_promo1'); }catch(err){}
+  if(used){ e.target.value = profile.name = 'Танкист'; saveProfile(); return; }
+  try{ localStorage.setItem('sm_promo1', '1'); }catch(err){}
+  profile.coins += 6000;
+  profile.bestWave = Math.max(profile.bestWave|0, 100); // открывает КОШМАР
+  e.target.value = profile.name = 'Танкист';
+  saveProfile();
+  updateMenuBest();
+  renderDiffRow();
+  alert('Казна восстановлена: +6000 🪙, КОШМАР открыт. Впиши своё имя и в бой!');
 });
 
 // ---------- выбор сложности ----------

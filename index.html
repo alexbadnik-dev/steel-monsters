@@ -280,7 +280,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v60';
+const GAME_VERSION = 'v61';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1077,9 +1077,9 @@ const ETYPES = {
   heavy:   { r:25, hp:90, sp:52,  dmg:14, fire:[2.0,3.2], score:250, color:'#c2a06b', dark:'#6e5634', scale:1.12, bspd:260, br:6 },
   // камикадзе: не стреляет, несётся на игрока и взрывается при контакте
   kam:     { r:15, hp:18, sp:235, dmg:26, fire:[99,99],   score:120, color:'#ff8d6b', dark:'#8a2f24', scale:0.62, bspd:0,   br:0 },
-  // снайпер: держится далеко, целится лазером и бьёт точным мощным выстрелом.
+  // снайпер: держится далеко, целится лазером и бьёт точным мощным выстрелом. Облик — САУ.
   // hp 48: раньше (30) умирал легче рядового — элита должна требовать фокуса (модель balance_snp4)
-  sniper:  { r:18, hp:48, sp:70,  dmg:19, fire:[3.0,4.4], score:210, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4 },
+  sniper:  { r:18, hp:48, sp:70,  dmg:19, fire:[3.0,4.4], score:210, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4, fx:{ turret:'sau', barrel:'long' } },
   // миномётчик: издалека навешивает бомбы по области (красный круг — точка падения)
   mortar:  { r:21, hp:50, sp:42,  dmg:16, fire:[3.6,5.0], score:220, color:'#a8a27a', dark:'#5c5838', scale:0.95, bspd:0, br:0, fx:{ turret:'box', barrel:'heavy' } },
   // медик: не стреляет, лечит соседних врагов — выбивай первым!
@@ -1846,7 +1846,8 @@ function enemyShoot(e){
   // снайпер бьёт точно по зафиксированному лазером направлению
   let a = (e.type === 'sniper' && e.lockA != null) ? e.lockA : e.turret + rand(-0.08, 0.08);
   if(state.stormT > 0) a += rand(-0.22, 0.22); // в бурю прицелы плывут у всех
-  bullets.push({ x:e.x + Math.cos(a)*(e.r+12), y:e.y + Math.sin(a)*(e.r+12),
+  const muz = e.type === 'sniper' ? e.r + 18 : e.r + 12; // у САУ ствол длиннее
+  bullets.push({ x:e.x + Math.cos(a)*muz, y:e.y + Math.sin(a)*muz,
                  vx:Math.cos(a)*e.bspd, vy:Math.sin(a)*e.bspd, from:'e', dmg:e.dmg, r:e.br });
   flash(e.x + Math.cos(a)*(e.r+14), e.y + Math.sin(a)*(e.r+14), a);
   e.recoil = 1;
@@ -2906,6 +2907,17 @@ function drawTank(t, opts, c){
     rrectC(c, 10*s, -5*s, 31*s, 10*s, 3*s); c.fill();
     c.fillStyle = '#00000055';
     c.fillRect(34*s, -6.5*s, 6*s, 13*s);
+  } else if(fx.barrel === 'long'){
+    // САУ: длинный тонкий ствол, эжектор посередине, дульный тормоз на срезе
+    rrectC(c, 2*s, -3.2*s, 41*s, 6.4*s, 2.5*s); c.fill();
+    rrectC(c, 18*s, -4.6*s, 7*s, 9.2*s, 2*s); c.fill();
+    rrectC(c, 38*s, -5.2*s, 7.5*s, 10.4*s, 2*s); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1, 1.3*s);
+    rrectC(c, 18*s, -4.6*s, 7*s, 9.2*s, 2*s); c.stroke();
+    rrectC(c, 38*s, -5.2*s, 7.5*s, 10.4*s, 2*s); c.stroke();
+    c.fillStyle = '#00000055';
+    c.fillRect(40*s, -5.2*s, 1.6*s, 10.4*s);
+    c.fillRect(43*s, -5.2*s, 1.6*s, 10.4*s);
   } else {
     rrectC(c, 10*s, -4*s, 26*s, 8*s, 3*s); c.fill();
     c.fillStyle = '#00000055';
@@ -2926,6 +2938,16 @@ function drawTank(t, opts, c){
     rrectC(c, -11*s, -11*s, 22*s, 22*s, 4*s); c.stroke();
     c.fillStyle = '#ffffff22';
     rrectC(c, -11*s, -11*s, 22*s, 9*s, 4*s); c.fill();
+  } else if(fx.turret === 'sau'){
+    // низкая бронерубка у кормы + маска пушки на лобовом листе
+    c.fillStyle = tc;
+    rrectC(c, -18*s, -10*s, 23*s, 20*s, 5*s); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
+    rrectC(c, -18*s, -10*s, 23*s, 20*s, 5*s); c.stroke();
+    c.fillStyle = '#ffffff22';
+    rrectC(c, -18*s, -10*s, 23*s, 8*s, 5*s); c.fill();
+    c.fillStyle = darkC;
+    rrectC(c, 3*s, -5.5*s, 6*s, 11*s, 2.5*s); c.fill();
   } else {
     c.fillStyle = tc;
     c.beginPath(); c.arc(0, 0, 13*s, 0, Math.PI*2); c.fill();
@@ -2953,6 +2975,7 @@ function drawTank(t, opts, c){
   }
 
   // Gerand eyes
+  if(fx.turret === 'sau') c.translate(-11*s, 0); // глаза на рубке, а не на стволе
   const blink = (opts.blink && opts.blink > 0);
   const eyeH = blink ? 1.6 : 9;
   c.fillStyle = fx.eyeColor || '#fff';
@@ -3522,7 +3545,7 @@ function render(){
   // лазерные прицелы снайперов (под танками): свечение + ядро + точка на цели
   for(const e of enemies){
     if(e.type === 'sniper' && e.lockA != null){
-      const x0 = e.x + Math.cos(e.lockA)*(e.r+6), y0 = e.y + Math.sin(e.lockA)*(e.r+6);
+      const x0 = e.x + Math.cos(e.lockA)*(e.r+18), y0 = e.y + Math.sin(e.lockA)*(e.r+18); // от среза ствола САУ
       const x1 = e.x + Math.cos(e.lockA)*1400, y1 = e.y + Math.sin(e.lockA)*1400;
       const pulse = 0.5 + 0.5*Math.abs(Math.sin(state.time*16));
       ctx.save();

@@ -297,7 +297,8 @@ html{height:100%}
 <div class="overlay" id="board" hidden>
   <h1>РЕЙТИНГ</h1>
   <p>1 волна = 1 🏆 · после 100-й — ×2<br>
-  <span style="font-size:12px;color:var(--ink-dim)">вкладки классов — бои на этом устройстве · 🌍 МИР — общий, тапни строку для разведки</span></p>
+  <span style="font-size:12px;color:var(--ink-dim)">вкладки классов — бои на этом устройстве<br>
+  🌍 МИР — общий · тапни строку для разведки</span></p>
   <div class="menurow" id="boardTabs"></div>
   <div class="boardlist" id="boardList"></div>
   <button class="btn gray" id="boardBack">НАЗАД</button>
@@ -342,7 +343,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v80';
+const GAME_VERSION = 'v81';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью

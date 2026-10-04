@@ -47,6 +47,10 @@ html{height:100%}
   font-family:inherit;padding:0;
 }
 .iconbtn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+/* выключено: красная рамка и косая черта поверх, как у знака «запрещено» */
+.iconbtn.off{position:relative;border-color:#ff5540aa;background:#2a1a18cc}
+.iconbtn.off::after{content:'';position:absolute;left:6px;right:6px;top:50%;height:3px;margin-top:-1.5px;
+  background:#ff5540;border-radius:2px;transform:rotate(-45deg);box-shadow:0 0 0 1.5px #2a1a18cc}
 #bossbarwrap{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:50%;transform:translateX(-50%);width:min(380px,52vw);z-index:5;pointer-events:none}
 #bossbarwrap .label{text-align:center;font-size:12px;letter-spacing:2px;color:#ffb3aa;text-shadow:0 2px 3px #000a;margin-bottom:4px}
 .bosswrap{height:14px;background:#0008;border:2px solid #0006;border-radius:8px;overflow:hidden}
@@ -289,7 +293,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v70';
+const GAME_VERSION = 'v71';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -4920,11 +4924,17 @@ $('colorReset').addEventListener('click', ()=>{
 });
 $('pauseBtn').addEventListener('click', pauseGame);
 
-function updateMusicBtn(){ $('musicBtn').textContent = music.on ? '🎵' : '🎵'; $('musicBtn').style.opacity = music.on ? '1' : '0.4'; }
+function updateMusicBtn(){
+  $('musicBtn').style.opacity = music.on ? '1' : '0.75';
+  $('musicBtn').classList.toggle('off', !music.on);
+}
 $('musicBtn').addEventListener('click', ()=>{ audio(); music.toggle(); updateMusicBtn(); if(state.mode === 'menu') renderMusicRow(); });
 updateMusicBtn();
 
-function updateSoundBtn(){ $('soundBtn').textContent = soundOn ? '🔊' : '🔇'; }
+function updateSoundBtn(){
+  $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+  $('soundBtn').classList.toggle('off', !soundOn);
+}
 $('soundBtn').addEventListener('click', ()=>{
   soundOn = !soundOn;
   try{ localStorage.setItem('sm_sound', soundOn ? '1' : '0'); }catch(e){}

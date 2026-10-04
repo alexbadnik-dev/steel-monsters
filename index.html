@@ -106,10 +106,14 @@ html{height:100%}
 .boardrow .nm{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .boardrow .wv{color:var(--ink-dim);font-size:12px;flex:none}
 .boardrow .sc{color:var(--ink);flex:none;min-width:54px;text-align:right}
-.shopgrid{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:580px;max-height:50vh;overflow:auto;pointer-events:auto;padding:4px}
-.skincard{width:120px;background:#ffffff0d;border-radius:12px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px}
+/* сетка: карточки в ряду всегда одной высоты, кнопка прижата к низу — ничего не «плывёт» */
+.shopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:12px;align-items:stretch;
+  width:min(580px,94vw);max-height:50vh;overflow:auto;pointer-events:auto;padding:4px}
+.shopgrid .wide{grid-column:1/-1}
+.skincard{background:#ffffff0d;border-radius:12px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px}
 .skincard .prev{width:76px;height:76px}
 .skincard .nm{font-size:13px}
+.skincard .skbtn{margin-top:auto}
 .skbtn{pointer-events:auto;cursor:pointer;border:0;border-radius:8px;font-family:inherit;font-size:13px;padding:7px 12px;
   background:linear-gradient(180deg,#6fe58f,#2e9c4f);color:#0c2414;width:100%}
 .skbtn.owned{background:linear-gradient(180deg,#9db0bf,#5c7183);color:#101820}
@@ -276,7 +280,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v59';
+const GAME_VERSION = 'v60';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -460,7 +464,13 @@ const UPGRADES = [
   { id:'rapid',  name:'Скорострел', chip:'⚡', color:'#f1c40f', ink:'#5c4a02', costs:[600,1200,2400],
     desc: l => 'Держится ' + (6 + l*1.5) + ' сек' },
   { id:'triple', name:'Тройной',    chip:'3×', color:'#ff9f43', ink:'#5e3208', costs:[600,1200,2400],
-    desc: l => (l >= 3 ? 'ПЯТЬ стволов! · ' : '') + 'Держится ' + (8 + l*2) + ' сек' + (l === 2 ? ' · на 3 ур. — 5 стволов!' : '') }
+    desc: l => (l >= 3 ? 'ПЯТЬ стволов! · ' : '') + 'Держится ' + (8 + l*2) + ' сек' + (l === 2 ? ' · на 3 ур. — 5 стволов!' : '') },
+  { id:'freeze', name:'Заморозка',  chip:'❄', color:'#bfe8f5', ink:'#0f465e', costs:[600,1200,2400],
+    desc: l => 'Морозит ' + (3.5 + l) + ' сек' },
+  { id:'magnet', name:'Магнит',     chip:'U',  color:'#f78fb3', ink:'#9c2015', costs:[500,1000,2000],
+    desc: l => 'Тянет добро ' + (10 + l*3) + ' сек' },
+  { id:'beam',   name:'Луч',        chip:'☄', color:'#4aa6d8', ink:'#06283a', costs:[800,1600,3200],
+    desc: l => 'Жарит ' + (6 + l*1.5) + ' сек' }
 ];
 
 // ---------- классы танка ----------
@@ -514,12 +524,15 @@ function loadProfile(){
         med:    Math.min(3, Math.max(0, (u.med|0))),
         shield: Math.min(3, Math.max(0, (u.shield|0))),
         rapid:  Math.min(3, Math.max(0, (u.rapid|0))),
-        triple: Math.min(3, Math.max(0, (u.triple|0)))
+        triple: Math.min(3, Math.max(0, (u.triple|0))),
+        freeze: Math.min(3, Math.max(0, (u.freeze|0))),
+        magnet: Math.min(3, Math.max(0, (u.magnet|0))),
+        beam:   Math.min(3, Math.max(0, (u.beam|0)))
       }))(p.upg || {}),
       customColor: /^#[0-9a-f]{6}$/i.test(p.customColor || '') ? p.customColor : null
     };
   }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', classes:['uni'], pets:[], pet:null,
-                      diff:'norm', bestWave:0, upg:{ med:0, shield:0, rapid:0, triple:0 }, customColor:null }; }
+                      diff:'norm', bestWave:0, upg:{ med:0, shield:0, rapid:0, triple:0, freeze:0, magnet:0, beam:0 }, customColor:null }; }
 }
 const profile = loadProfile();
 if(!profile.skins.includes('green')) profile.skins.push('green');
@@ -1064,8 +1077,9 @@ const ETYPES = {
   heavy:   { r:25, hp:90, sp:52,  dmg:14, fire:[2.0,3.2], score:250, color:'#c2a06b', dark:'#6e5634', scale:1.12, bspd:260, br:6 },
   // камикадзе: не стреляет, несётся на игрока и взрывается при контакте
   kam:     { r:15, hp:18, sp:235, dmg:26, fire:[99,99],   score:120, color:'#ff8d6b', dark:'#8a2f24', scale:0.62, bspd:0,   br:0 },
-  // снайпер: держится далеко, целится лазером и бьёт точным мощным выстрелом
-  sniper:  { r:18, hp:30, sp:70,  dmg:19, fire:[3.0,4.4], score:180, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4 },
+  // снайпер: держится далеко, целится лазером и бьёт точным мощным выстрелом.
+  // hp 48: раньше (30) умирал легче рядового — элита должна требовать фокуса (модель balance_snp4)
+  sniper:  { r:18, hp:48, sp:70,  dmg:19, fire:[3.0,4.4], score:210, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4 },
   // миномётчик: издалека навешивает бомбы по области (красный круг — точка падения)
   mortar:  { r:21, hp:50, sp:42,  dmg:16, fire:[3.6,5.0], score:220, color:'#a8a27a', dark:'#5c5838', scale:0.95, bspd:0, br:0, fx:{ turret:'box', barrel:'heavy' } },
   // медик: не стреляет, лечит соседних врагов — выбивай первым!
@@ -2012,10 +2026,10 @@ function applyPickup(p){
   else if(p.type === 'shield'){ player.shieldT = 6 + bb + U.shield*1.5; addFloat(p.x, p.y, 'ЩИТ!', '#6fd9e8'); }
   else if(p.type === 'rapid'){ player.rapidT = 6 + bb + U.rapid*1.5; addFloat(p.x, p.y, 'СКОРОСТРЕЛ!', '#f1c40f'); }
   else if(p.type === 'triple'){ player.tripleT = 8 + bb + U.triple*2; addFloat(p.x, p.y, U.triple >= 3 ? 'ПЯТЕРНОЙ!' : 'ТРОЙНОЙ!', '#ff9f43'); }
-  else if(p.type === 'freeze'){ state.freezeT = 3.5; addFloat(p.x, p.y, 'ЗАМОРОЗКА!', '#9fd9e8'); }
-  else if(p.type === 'magnet'){ state.magnetT = 10; addFloat(p.x, p.y, 'МАГНИТ!', '#f78fb3'); }
+  else if(p.type === 'freeze'){ state.freezeT = 3.5 + (U.freeze|0); addFloat(p.x, p.y, 'ЗАМОРОЗКА!', '#9fd9e8'); }
+  else if(p.type === 'magnet'){ state.magnetT = 10 + (U.magnet|0)*3; addFloat(p.x, p.y, 'МАГНИТ!', '#f78fb3'); }
   else if(p.type === 'beam'){
-    player.beamT = 6 + bb;
+    player.beamT = 6 + bb + (U.beam|0)*1.5;
     addFloat(p.x, p.y, 'ЛУЧ!', '#6fd9e8');
     voice.say('Лазер активирован', { rate: 0.95 });
   }
@@ -3226,14 +3240,6 @@ function drawPickup(m, ctx = GCTX){ // второй аргумент — цел�
       ctx.lineWidth = 5.4; ctx.lineCap = 'butt';
       ctx.beginPath(); ctx.arc(0, -1, 6, 0, Math.PI); ctx.stroke();
       ctx.fillRect(-8.5, -8, 5, 5); ctx.fillRect(3.5, -8, 5, 5);
-    } else if(m.type === 'beam'){
-      ctx.lineWidth = 3.4; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(-7, 7); ctx.lineTo(5, -5); ctx.stroke();
-      ctx.lineWidth = 1.8; // искры у точки попадания
-      ctx.beginPath();
-      ctx.moveTo(3, -9); ctx.lineTo(8, -4);
-      ctx.moveTo(6, -9.5); ctx.lineTo(9, -6.5);
-      ctx.stroke();
     }
     ctx.restore();
   };
@@ -3246,8 +3252,29 @@ function drawPickup(m, ctx = GCTX){ // второй аргумент — цел�
     magnet: ['#9c2015', '#e84c3d'],
     beam:   ['#06283a', '#dff6ff']
   }[m.type] || ['#333', '#555'];
-  icon(1, 1.5, ICON_COLORS[0]); // тень иконки
-  icon(0, 0, ICON_COLORS[1]);   // сама иконка
+  if(m.type === 'beam'){
+    // лазерная пушка: излучатель, луч с ярким ядром в ореоле, вспышка в точке попадания
+    ctx.save();
+    ctx.translate(0, -2.5);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(111,217,232,0.45)'; ctx.lineWidth = 6.5; // ореол луча
+    ctx.beginPath(); ctx.moveTo(-2.5, 0); ctx.lineTo(8.5, 0); ctx.stroke();
+    ctx.fillStyle = '#083048'; rrectC(ctx, -10.5, -5, 8, 10, 2.5); ctx.fill(); // корпус излучателя
+    ctx.fillStyle = '#1a5578'; rrectC(ctx, -10.5, -5, 8, 5, 2.5); ctx.fill();
+    ctx.fillStyle = '#6fd9e8'; ctx.fillRect(-4.6, -2, 2.6, 4);                 // окно излучателя
+    ctx.strokeStyle = '#eafcff'; ctx.lineWidth = 2.4;                          // ядро луча
+    ctx.beginPath(); ctx.moveTo(-1.5, 0); ctx.lineTo(8, 0); ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.7;                          // вспышка-звезда
+    ctx.beginPath();
+    ctx.moveTo(8, -4.2); ctx.lineTo(8, 4.2);
+    ctx.moveTo(5.2, -3); ctx.lineTo(10.8, 3);
+    ctx.moveTo(5.2, 3); ctx.lineTo(10.8, -3);
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    icon(1, 1.5, ICON_COLORS[0]); // тень иконки
+    icon(0, 0, ICON_COLORS[1]);   // сама иконка
+  }
   ctx.restore();
 }
 
@@ -4231,10 +4258,7 @@ function loop(now){
   }
   // живые ящики на экране прокачки
   if(!$('perks').hidden && perkPrevList.length){
-    for(const p of perkPrevList){
-      p.c.clearRect(0, 0, 64, 64);
-      drawPickup({ x:32, y:30, type:p.type, t:state.time, still:true }, p.c);
-    }
+    for(const p of perkPrevList) drawPerkChip(p.c, p.type, state.time);
   }
   render();
   requestAnimationFrame(loop);
@@ -4318,7 +4342,7 @@ function renderShop(){
     skinCat(s.id) === shopTab);
   if(!list.length){
     const p = document.createElement('p');
-    p.className = 'classdesc';
+    p.className = 'classdesc wide';
     p.textContent = 'Тут пока пусто — загляни в другие разделы!';
     grid.append(p);
   }
@@ -4357,14 +4381,18 @@ function renderShop(){
 
   // ---- питомцы ----
   const hdr = document.createElement('div');
-  hdr.style.cssText = 'width:100%;font-size:14px;color:var(--ink-dim);letter-spacing:2px;margin-top:8px';
+  hdr.className = 'wide';
+  hdr.style.cssText = 'font-size:14px;color:var(--ink-dim);letter-spacing:2px;margin-top:8px';
   hdr.textContent = '— ПИТОМЦЫ —';
   grid.append(hdr);
   for(const p of PETS){
     const card = document.createElement('div'); card.className = 'skincard';
     const prev = document.createElement('canvas');
     prev.className = 'prev'; prev.width = 76; prev.height = 76;
-    drawPet(prev.getContext('2d'), 38, 38, p.id, -Math.PI/2, 1);
+    const ppc = prev.getContext('2d');
+    ppc.save(); ppc.translate(38, 40); ppc.scale(1.7, 1.7); // дрон мелкий — укрупняем в карточке
+    drawPet(ppc, 0, -2, p.id, -Math.PI/2, 1);
+    ppc.restore();
     const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = p.name;
     const ds = document.createElement('div');
     ds.style.cssText = 'font-size:10px;color:var(--ink-dim);line-height:1.3';
@@ -4396,19 +4424,27 @@ function renderShop(){
 }
 
 // ---------- экран прокачки ----------
+// ящик-превью: укрупняем, чтобы заполнял канвас карточки целиком
+function drawPerkChip(c, type, t){
+  c.clearRect(0, 0, 64, 64);
+  c.save(); c.translate(32, 34); c.scale(1.4, 1.4);
+  drawPickup({ x:0, y:-2, type, t, still:true }, c);
+  c.restore();
+}
 function renderPerks(){
   $('perkCoins').textContent = '🪙 ' + profile.coins;
   const grid = $('perkGrid');
   grid.innerHTML = '';
   perkPrevList = [];
   for(const u of UPGRADES){
-    const lvl = profile.upg[u.id];
+    // |0 — страховка: профиль из облака может быть старым, без новых прокачек
+    const lvl = Math.min(3, Math.max(0, profile.upg[u.id]|0));
     const card = document.createElement('div'); card.className = 'skincard';
     // живой объёмный ящик — тот же, что падает на поле боя
     const chip = document.createElement('canvas');
-    chip.width = 64; chip.height = 64; chip.style.cssText = 'width:52px;height:52px';
+    chip.width = 64; chip.height = 64; chip.style.cssText = 'width:60px;height:60px';
     const pc2 = chip.getContext('2d');
-    drawPickup({ x:32, y:30, type:u.id, t:0.4, still:true }, pc2);
+    drawPerkChip(pc2, u.id, 0.4);
     perkPrevList.push({ c: pc2, type: u.id });
     const nm = document.createElement('div'); nm.className = 'nm';
     nm.textContent = u.name + ' ' + '●'.repeat(lvl) + '○'.repeat(3 - lvl);
@@ -4425,7 +4461,7 @@ function renderPerks(){
       btn.addEventListener('click', ()=>{
         if(profile.coins < cost) return;
         profile.coins -= cost;
-        profile.upg[u.id]++;
+        profile.upg[u.id] = lvl + 1;
         saveProfile(); audio(); sfx.buy();
         renderPerks();
       });

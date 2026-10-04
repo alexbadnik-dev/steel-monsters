@@ -123,8 +123,8 @@ SW не регистрируется вне веба, build-platforms.sh соб�
 отправка с фолбэком, если колонки ещё нет.
 
 ЧЕК-ЛИСТ публикации Яндекс Игры:
-1. SQL в Supabase: alter table public.scores add column if not exists
-   secs bigint not null default 0;
+1. [СДЕЛАНО 04.10.2026] SQL в Supabase: колонка scores.secs + таблица
+   public.profiles (облачные профили) с RLS anon.
 2. Кабинет разработчика games.yandex.ru/console: аккаунт, новая игра.
 3. ./build-platforms.sh → dist/yandex.zip загрузить как сборку.
 4. Иконка 512x512, скриншоты (телефон+десктоп), описание БЕЗ упоминания

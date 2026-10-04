@@ -332,7 +332,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v77';
+const GAME_VERSION = 'v78';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -4937,13 +4937,13 @@ function renderDiffRow(){
 function renderMusicRow(){
   const row = $('musicRow');
   row.innerHTML = '';
-  const items = [['dance','💃 ДАНС'],['rock','🎸 РОК'],['chill','🌙 ЧИЛЛ'],['dendy','🕹️ ДЕНДИ'],[null,'🔇 ВЫКЛ']];
-  for(const [id, label] of items){
+  const items = [['dance','ДАНС','note'],['rock','РОК','guitar'],['chill','ЧИЛЛ','moon'],['dendy','ДЕНДИ','pad'],[null,'ВЫКЛ','mute']];
+  for(const [id, label, icon] of items){
     const b = document.createElement('button');
     const active = id === null ? !music.on : (music.on && music.track === id);
     b.className = 'classbtn' + (active ? ' sel' : '');
     b.style.flexDirection = 'row';
-    b.textContent = label;
+    b.append(pixIcon(icon, active ? '#6fe58f' : '#9fb3c4', 13), document.createTextNode(' ' + label));
     b.addEventListener('click', ()=>{
       audio();
       if(id === null) music.setOn(false);
@@ -4958,7 +4958,7 @@ function renderMusicRow(){
     const vb = document.createElement('button');
     vb.className = 'classbtn' + (voice.on ? ' sel' : '');
     vb.style.flexDirection = 'row';
-    vb.textContent = '🎙 ГОЛОС';
+    vb.append(pixIcon('mic', voice.on ? '#6fe58f' : '#9fb3c4', 13), document.createTextNode(' ГОЛОС'));
     vb.addEventListener('click', ()=>{
       voice.setOn(!voice.on);
       renderMusicRow();
@@ -5023,6 +5023,47 @@ $('colorReset').addEventListener('click', ()=>{
 });
 $('pauseBtn').addEventListener('click', pauseGame);
 
+// ---------- пиксель-иконки: свои, по сетке 8×8, вместо системных эмодзи ----------
+const PIX = {
+  shop:  ['...##...','..#..#..','...##...','..####..','.##..##.','##....##','##.##.##','.######.'],
+  perk:  ['....##..','...##...','..##....','.#####..','...##...','..##....','.##.....','##......'],
+  drone: ['##......##','##.#..#.##','...#..#...','..######..','..######..','...#..#...','##.#..#.##','##......##'],
+  cup:   ['########','########','.######.','..####..','...##...','...##...','..####..','.######.'],
+  quest: ['..####..','.##..##.','.....##.','....##..','...##...','........','...##...','...##...'],
+  note:  ['....###.','....#.##','....#...','....#...','....#...','.####...','#####...','.###....'],
+  guitar:['......##','.....##.','....##..','..###...','.#####..','.##.##..','.#####..','..###...'],
+  moon:  ['..####..','.##.....','##......','##......','##......','##......','.##.....','..####..'],
+  pad:   ['........','########','#..#...#','#.###.##','#..#...#','########','........','........'],
+  mute:  ['..####..','.#....#.','#....#.#','#...#..#','#..#...#','#.#....#','.#....#.','..####..'],
+  mic:   ['..###...','..###...','..###...','..###...','.#####..','..###...','...#....','..###...'],
+  speaker:['.....#..','...###..','.#####..','######..','######..','.#####..','...###..','.....#..'],
+  pause: ['........','.##..##.','.##..##.','.##..##.','.##..##.','.##..##.','.##..##.','........']
+};
+function pixIcon(name, color, h){
+  const g = PIX[name]; if(!g) return document.createElement('span');
+  const S = 8;
+  const c = document.createElement('canvas');
+  c.width = g[0].length*S; c.height = g.length*S;
+  const x = c.getContext('2d');
+  x.fillStyle = color || '#101820';
+  g.forEach((row, yy) => { for(let xx = 0; xx < row.length; xx++) if(row[xx] === '#') x.fillRect(xx*S, yy*S, S, S); });
+  c.style.cssText = 'height:' + (h || 15) + 'px;width:auto;image-rendering:pixelated;vertical-align:-2px;flex:none';
+  return c;
+}
+function pixify(btn, name, color, h){
+  const t = btn.textContent.replace(/^[^\wА-ЯЁа-яё]+\s*/u, ''); // срезаем эмодзи из текста
+  btn.textContent = '';
+  btn.append(pixIcon(name, color, h), document.createTextNode(' ' + t));
+}
+pixify($('shopBtn'), 'shop', '#17212b');
+pixify($('perksBtn'), 'perk', '#17212b');
+pixify($('supportBtn'), 'drone', '#17212b');
+pixify($('boardBtn'), 'cup', '#17212b');
+pixify($('helpBtn'), 'quest', '#17212b');
+$('musicBtn').textContent = ''; $('musicBtn').append(pixIcon('note', '#e8eef2', 19));
+$('soundBtn').textContent = ''; $('soundBtn').append(pixIcon('speaker', '#e8eef2', 19));
+$('pauseBtn').textContent = ''; $('pauseBtn').append(pixIcon('pause', '#e8eef2', 17));
+
 function updateMusicBtn(){
   $('musicBtn').style.opacity = music.on ? '1' : '0.75';
   $('musicBtn').classList.toggle('off', !music.on);
@@ -5031,7 +5072,7 @@ $('musicBtn').addEventListener('click', ()=>{ audio(); music.toggle(); updateMus
 updateMusicBtn();
 
 function updateSoundBtn(){
-  $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+  // иконка одна (пиксельный динамик) — выключенность показывает красная черта
   $('soundBtn').classList.toggle('off', !soundOn);
 }
 $('soundBtn').addEventListener('click', ()=>{

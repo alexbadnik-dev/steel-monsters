@@ -280,7 +280,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v63';
+const GAME_VERSION = 'v64';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -2979,6 +2979,15 @@ function drawTank(t, opts, c){
     rrectC(c, -21*s, -9.5*s, 18*s, 19*s, 4.5*s); c.stroke();
     c.fillStyle = '#ffffff22';
     rrectC(c, -21*s, -9.5*s, 18*s, 8*s, 4.5*s); c.fill();
+    // нос-капот с решёткой радиатора, как у грузовика
+    c.fillStyle = darkC;
+    rrectC(c, -4.5*s, -3.2*s, 5*s, 6.4*s, 1.8*s); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1, 1.2*s);
+    rrectC(c, -4.5*s, -3.2*s, 5*s, 6.4*s, 1.8*s); c.stroke();
+    c.fillStyle = '#00000055';
+    c.fillRect(-3.6*s, -2*s, 3.2*s, 1*s);
+    c.fillRect(-3.6*s, -0.5*s, 3.2*s, 1*s);
+    c.fillRect(-3.6*s, 1*s, 3.2*s, 1*s);
   } else {
     c.fillStyle = tc;
     c.beginPath(); c.arc(0, 0, 13*s, 0, Math.PI*2); c.fill();

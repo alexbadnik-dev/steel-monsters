@@ -276,7 +276,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v58';
+const GAME_VERSION = 'v59';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -700,7 +700,7 @@ async function migrateLocalBest(){
 }
 // при старте и при возвращении сети дошлём недоставленные результаты,
 // включая «чек» боя, оборванного закрытием игры
-setTimeout(()=>{ restorePending(); flushOutbox(); migrateLocalBest(); }, 2500);
+setTimeout(()=>{ restorePending(); flushOutbox(); migrateLocalBest(); cloudSaveSoon(); }, 2500);
 window.addEventListener('online', ()=> flushOutbox());
 
 // ---------- checkpoint: продолжить с начала десятки после побеждённого босса ----------

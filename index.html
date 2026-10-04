@@ -173,6 +173,7 @@ html{height:100%}
   <div class="menurow">
     <button class="btn gray small" id="shopBtn">🛒 МАГАЗИН</button>
     <button class="btn gray small" id="perksBtn">⚡ ПРОКАЧКА</button>
+    <button class="btn gray small" id="supportBtn">🚁 ПОДМОГА</button>
     <button class="btn gray small" id="boardBtn">🏆 РЕЙТИНГ</button>
     <button class="btn gray small" id="helpBtn">❓ ОПИСАНИЕ</button>
   </div>
@@ -192,6 +193,14 @@ html{height:100%}
   <div class="menurow" id="shopTabs"></div>
   <div class="shopgrid" id="shopGrid"></div>
   <button class="btn gray" id="shopBack">НАЗАД</button>
+</div>
+
+<div class="overlay" id="support" hidden>
+  <h1 class="gold">ПОДМОГА</h1>
+  <p id="supportCoins"></p>
+  <p>Верный помощник кружит рядом весь бой — выбери одного</p>
+  <div class="shopgrid" id="supportGrid"></div>
+  <button class="btn gray" id="supportBack">НАЗАД</button>
 </div>
 
 <div class="overlay" id="perks" hidden>
@@ -280,7 +289,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v68';
+const GAME_VERSION = 'v69';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1459,7 +1468,7 @@ function resetGame(wave, score, hp){
   startWave(wave ?? 1);
 }
 
-const OVERLAYS = ['menu','pause','gameover','victory','shop','board','help','perks'];
+const OVERLAYS = ['menu','pause','gameover','victory','shop','board','help','perks','support'];
 // бой — в альбомной: установленная PWA (fullscreen) на Android умеет
 // поворачиваться сама, как нативные игры, даже при выключенном автоповороте
 function lockLandscape(){
@@ -4552,12 +4561,13 @@ function renderShop(){
     grid.append(card);
   }
 
-  // ---- питомцы ----
-  const hdr = document.createElement('div');
-  hdr.className = 'wide';
-  hdr.style.cssText = 'font-size:14px;color:var(--ink-dim);letter-spacing:2px;margin-top:8px';
-  hdr.textContent = '— ПОДМОГА —';
-  grid.append(hdr);
+}
+
+// ---------- подмога: отдельный экран ----------
+function renderSupport(){
+  $('supportCoins').textContent = '🪙 ' + profile.coins;
+  const grid = $('supportGrid');
+  grid.innerHTML = '';
   for(const p of PETS){
     const card = document.createElement('div'); card.className = 'skincard';
     const prev = document.createElement('canvas');
@@ -4574,10 +4584,10 @@ function renderShop(){
     const owned = profile.pets.includes(p.id);
     if(profile.pet === p.id){
       btn.textContent = 'УБРАТЬ'; btn.classList.add('owned');
-      btn.addEventListener('click', ()=>{ profile.pet = null; saveProfile(); renderShop(); });
+      btn.addEventListener('click', ()=>{ profile.pet = null; saveProfile(); renderSupport(); });
     } else if(owned){
       btn.textContent = 'ВЫБРАТЬ'; btn.classList.add('owned');
-      btn.addEventListener('click', ()=>{ profile.pet = p.id; saveProfile(); renderShop(); });
+      btn.addEventListener('click', ()=>{ profile.pet = p.id; saveProfile(); renderSupport(); });
     } else {
       btn.textContent = p.cost + ' 🪙';
       btn.disabled = profile.coins < p.cost;
@@ -4587,14 +4597,15 @@ function renderShop(){
         profile.pets.push(p.id);
         profile.pet = p.id;
         saveProfile(); audio(); sfx.buy();
-        renderShop();
+        renderSupport();
       });
     }
     card.append(prev, nm, ds, btn);
     grid.append(card);
   }
-
 }
+$('supportBtn').addEventListener('click', ()=>{ renderSupport(); setOverlay('support'); });
+$('supportBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
 
 // ---------- экран прокачки ----------
 // ящик-превью: укрупняем, чтобы заполнял канвас карточки целиком

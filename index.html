@@ -245,7 +245,7 @@ html{height:100%}
   <p>Берегись: снайпер светит красным лазером (увидел точку на броне — уезжай!), камикадзе обнимается со взрывом, миномётчик и дроны бомбят по красным кругам. А медик с крестом лечит своих — такого выбивай первым, нечего.</p>
   <p>Поле боя — живое: красные бочки взрываются от выстрела (замани врагов и подорви, но сам отойди!), камни крошатся и прикрывают от пуль. В болоте топи вязнут, на вулкане лавовые трещины жгут, в джунглях враги прячутся в зарослях, на снегах и леднике гусеницы скользят, а в пустыне налетают песчаные бури (у врагов в бурю прицелы плывут!) — у каждой земли свой характер.</p>
   <p>⚡ Супер-способность «Ударная волна» заряжается убийствами (жёлтая полоска под здоровьем): сметает все вражеские снаряды и бомбы и бьёт всех вокруг. Активация — <b>Q</b> на компьютере или жёлтая кнопка над огнём на телефоне.</p>
-  <p>За очки капают монеты: 10 очков = 1 🪙. Трать в магазине на скины, классы танков и подмогу: Напарник стреляет по врагам, Ремонтник чинит твой танк.</p>
+  <p>За очки капают монеты: 20 очков = 1 🪙. Трать в магазине на скины, классы танков и подмогу: Напарник стреляет по врагам, Ремонтник чинит твой танк.</p>
   <button class="btn gray" id="helpBack">НАЗАД</button>
 </div>
 
@@ -293,7 +293,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v72';
+const GAME_VERSION = 'v73';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -446,9 +446,9 @@ const SKINS = [
   { id:'kolobok', name:'Колобок',    cost:1000, hull:'#f6c82d', dark:'#9c7a10', fx:{ body:'hover', eyeColor:'#2b1b02' } },
   { id:'bogatyr', name:'Богатырь',   cost:1200, hull:'#9db0bf', dark:'#4e5a6a', fx:{ turretColor:'#f6d32d', barrel:'heavy' } },
   { id:'yaga',    name:'Баба-яга',   cost:1300, hull:'#5a4632', dark:'#2b2013', fx:{ antenna:true, eyeColor:'#9fff8a', glow:'#6a8f4a' } },
-  { id:'gorynych',name:'Горыныч',    cost:1400, hull:'#3e7a3a', dark:'#1d4a1c', fx:{ pattern:'scales', barrel:'triple', eyeColor:'#ff5540' } },
+  { id:'gorynych',name:'Горыныч',    cost:3000, lock:50, hull:'#3e7a3a', dark:'#1d4a1c', fx:{ pattern:'scales', barrel:'triple', eyeColor:'#ff5540' } },
   { id:'firebird',name:'Жар-птица',  cost:1500, hull:'#ff7b2f', dark:'#8a2f10', fx:{ pattern:'feathers', glow:'#ffb347', sparkle:true } },
-  { id:'emelya',  name:'Емеля',      cost:1700, hull:'#f0ead8', dark:'#8a7a60', fx:{ body:'pech' } },
+  { id:'emelya',  name:'Емеля',      cost:3200, hull:'#f0ead8', dark:'#8a7a60', fx:{ body:'pech' } },
   { id:'rainbow', name:'Хамелеон',   cost:2000, hull:'#58d97b', dark:'#1f7a40', fx:{ rainbow:true } }
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
@@ -463,34 +463,34 @@ function skinCat(id){ for(const k in SKIN_CATS){ if(SKIN_CATS[k].includes(id)) r
 
 // ---------- питомцы ----------
 const PETS = [
-  { id:'bot',  name:'Напарник',  cost:2500, color:'#8fb6d9', dark:'#3a5a74', desc:'Слетает к толпе и роняет бомбу — привет с неба' },
-  { id:'heal', name:'Ремонтник', cost:4000, color:'#8fe0b0', dark:'#2e7d4f', desc:'Варит броню прямо в бою: 2 HP/с и сноп искр' }
+  { id:'bot',  name:'Напарник',  cost:4500, lock:30,  color:'#8fb6d9', dark:'#3a5a74', desc:'Слетает к толпе и роняет бомбу — привет с неба' },
+  { id:'heal', name:'Ремонтник', cost:6500, lock:100, color:'#8fe0b0', dark:'#2e7d4f', desc:'Варит броню прямо в бою: 2 HP/с и сноп искр' }
 ];
 function petById(id){ return PETS.find(p => p.id === id) || null; }
 
 // ---------- прокачка бонусов (по 3 уровня) ----------
 const UPGRADES = [
-  { id:'med',    name:'Лечилка',    chip:'＋', color:'#f3f6f8', ink:'#101820', costs:[500,1000,2000],
+  { id:'med',    name:'Лечилка',    chip:'＋', color:'#f3f6f8', ink:'#101820', costs:[500,1000,3000],
     desc: l => 'Лечит ' + (25 + l*10) + ' HP' },
-  { id:'shield', name:'Щит',        chip:'Щ',  color:'#6fd9e8', ink:'#0e3a44', costs:[500,1000,2000],
+  { id:'shield', name:'Щит',        chip:'Щ',  color:'#6fd9e8', ink:'#0e3a44', costs:[500,1000,3000],
     desc: l => 'Держится ' + (6 + l*1.5) + ' сек' },
-  { id:'rapid',  name:'Скорострел', chip:'⚡', color:'#f1c40f', ink:'#5c4a02', costs:[600,1200,2400],
+  { id:'rapid',  name:'Скорострел', chip:'⚡', color:'#f1c40f', ink:'#5c4a02', costs:[600,1200,3600],
     desc: l => 'Держится ' + (6 + l*1.5) + ' сек' },
-  { id:'triple', name:'Тройной',    chip:'3×', color:'#ff9f43', ink:'#5e3208', costs:[600,1200,2400],
+  { id:'triple', name:'Тройной',    chip:'3×', color:'#ff9f43', ink:'#5e3208', costs:[600,1200,3600],
     desc: l => (l >= 3 ? 'ПЯТЬ стволов! · ' : '') + 'Держится ' + (8 + l*2) + ' сек' + (l === 2 ? ' · на 3 ур. — 5 стволов!' : '') },
-  { id:'freeze', name:'Заморозка',  chip:'❄', color:'#bfe8f5', ink:'#0f465e', costs:[600,1200,2400],
+  { id:'freeze', name:'Заморозка',  chip:'❄', color:'#bfe8f5', ink:'#0f465e', costs:[600,1200,3600],
     desc: l => 'Морозит ' + (3.5 + l) + ' сек' },
-  { id:'magnet', name:'Магнит',     chip:'U',  color:'#f78fb3', ink:'#9c2015', costs:[500,1000,2000],
+  { id:'magnet', name:'Магнит',     chip:'U',  color:'#f78fb3', ink:'#9c2015', costs:[500,1000,3000],
     desc: l => 'Тянет добро ' + (10 + l*3) + ' сек' },
-  { id:'beam',   name:'Луч',        chip:'☄', color:'#4aa6d8', ink:'#06283a', costs:[800,1600,3200],
+  { id:'beam',   name:'Луч',        chip:'☄', color:'#4aa6d8', ink:'#06283a', costs:[800,1600,4800],
     desc: l => 'Жарит ' + (6 + l*1.5) + ' сек' }
 ];
 
 // ---------- классы танка ----------
 const CLASSES = {
   uni:   { name:'БАЛБЕС',  cost:0,    speed:215, cd:0.24, rapidCd:0.11, dmg:15, hp:100, br:4,   scale:0.5,  desc:'И бегает, и бьёт, и даже иногда думает. Мастер на все траки' },
-  fast:  { name:'ТРУС',    cost:1500, speed:265, cd:0.16, rapidCd:0.08, dmg:10, hp:85,  br:3.5, scale:0.42, desc:'Юркий, как уж на сковородке: бьёт слабо, зато поди попади' },
-  heavy: { name:'БЫВАЛЫЙ', cost:3000, speed:165, cd:0.40, rapidCd:0.20, dmg:30, hp:130, br:6,   scale:0.62, desc:'Броня — во! Калибр — во! Скорость... зато какая броня' }
+  fast:  { name:'ТРУС',    cost:2000, speed:265, cd:0.16, rapidCd:0.08, dmg:10, hp:85,  br:3.5, scale:0.42, desc:'Юркий, как уж на сковородке: бьёт слабо, зато поди попади' },
+  heavy: { name:'БЫВАЛЫЙ', cost:4500, speed:165, cd:0.40, rapidCd:0.20, dmg:30, hp:130, br:6,   scale:0.62, desc:'Броня — во! Калибр — во! Скорость... зато какая броня' }
 };
 function playerClass(){ return CLASSES[profile.tank] || CLASSES.uni; }
 
@@ -505,6 +505,9 @@ function currentDiff(){ return DIFFS[profile.diff] || DIFFS.norm; }
 function nightmareUnlocked(){
   return (profile.bestWave|0) >= 100 || board.some(r => (r.wave|0) >= 100);
 }
+// замки прогресса: боевые покупки открываются по заслугам, а не только за монеты
+function reachedWave(n){ return (profile.bestWave|0) >= n || board.some(r => (r.wave|0) >= n); }
+function lockLabel(n){ return n >= 100 ? '🔒 пройди кампанию' : '🔒 дойди до в.' + n; }
 
 // затемнение цвета для корпуса при пользовательском цвете скина
 function shade(hex, k){
@@ -1592,8 +1595,8 @@ function endGame(win){
   $('bossbarwrap').hidden = true;
   if(state.score > best){ best = state.score; saveBest(best); }
   const rec = 'Рекорд: ' + best;
-  // монеты за бой (10 очков = 1 монета, на Харде/Кошмаре больше)
-  const earned = Math.max(0, Math.round((state.score - (state.awardedFor || 0)) / 10 * currentDiff().coins));
+  // монеты за бой (20 очков = 1 монета, на Харде/Кошмаре больше)
+  const earned = Math.max(0, Math.round((state.score - (state.awardedFor || 0)) / 20 * currentDiff().coins));
   state.awardedFor = state.score;
   profile.coins += earned;
   profile.bestWave = Math.max(profile.bestWave|0, state.wave);
@@ -4518,7 +4521,7 @@ let shopPrevList = []; // живые превью: перерисовывают�
 let perkPrevList = []; // живые ящики на экране прокачки
 let shopTab = 'all';   // раздел магазина
 function renderShop(){
-  $('shopCoins').textContent = '🪙 ' + profile.coins + ' · монеты за очки в бою (10 очков = 1 🪙)';
+  $('shopCoins').textContent = '🪙 ' + profile.coins + ' · монеты за очки в бою (20 очков = 1 🪙)';
   $('skinColor').value = profile.customColor || skinById(profile.equipped).hull;
   // вкладки разделов
   const tabs = $('shopTabs');
@@ -4563,6 +4566,9 @@ function renderShop(){
     } else if(owned){
       btn.textContent = 'ВЫБРАТЬ'; btn.classList.add('owned');
       btn.addEventListener('click', ()=>{ profile.equipped = s.id; saveProfile(); renderShop(); });
+    } else if(s.lock && !reachedWave(s.lock)){
+      btn.textContent = lockLabel(s.lock);
+      btn.disabled = true;
     } else {
       btn.textContent = s.cost + ' 🪙';
       btn.disabled = profile.coins < s.cost;
@@ -4606,6 +4612,9 @@ function renderSupport(){
     } else if(owned){
       btn.textContent = 'ВЫБРАТЬ'; btn.classList.add('owned');
       btn.addEventListener('click', ()=>{ profile.pet = p.id; saveProfile(); renderSupport(); });
+    } else if(p.lock && !reachedWave(p.lock)){
+      btn.textContent = lockLabel(p.lock);
+      btn.disabled = true;
     } else {
       btn.textContent = p.cost + ' 🪙';
       btn.disabled = profile.coins < p.cost;

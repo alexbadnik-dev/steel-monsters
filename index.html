@@ -280,7 +280,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v67';
+const GAME_VERSION = 'v68';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -450,7 +450,7 @@ function skinCat(id){ for(const k in SKIN_CATS){ if(SKIN_CATS[k].includes(id)) r
 
 // ---------- питомцы ----------
 const PETS = [
-  { id:'bot',  name:'Напарник',  cost:2500, color:'#8fb6d9', dark:'#3a5a74', desc:'Жужжит над башней и постреливает во всё подозрительное' },
+  { id:'bot',  name:'Напарник',  cost:2500, color:'#8fb6d9', dark:'#3a5a74', desc:'Слетает к толпе и роняет бомбу — привет с неба' },
   { id:'heal', name:'Ремонтник', cost:4000, color:'#8fe0b0', dark:'#2e7d4f', desc:'Варит броню прямо в бою: 2 HP/с и сноп искр' }
 ];
 function petById(id){ return PETS.find(p => p.id === id) || null; }
@@ -2140,28 +2140,54 @@ function update(dt){
   // перк: регенерация (с 3-го босса)
   if(player.regen) player.hp = Math.min(player.maxHp, player.hp + player.regen*dt);
 
-  // питомец
+  // подмога
   if(profile.pet){
     pet.t += dt;
     const oa = pet.t*1.3;
     const tx = player.x + Math.cos(oa)*56, ty = player.y + Math.sin(oa)*56;
-    pet.x += (tx - pet.x) * Math.min(1, dt*6);
-    pet.y += (ty - pet.y) * Math.min(1, dt*6);
+    const striking = profile.pet === 'bot' && pet.mode === 'strike';
+    if(!striking){ // на боевом заходе дрон летит сам, а не тянется к орбите
+      pet.x += (tx - pet.x) * Math.min(1, dt*6);
+      pet.y += (ty - pet.y) * Math.min(1, dt*6);
+    }
     pet.cd -= dt;
     if(profile.pet === 'bot'){
-      let tgt = null, bd3 = 470;
-      for(const e of enemies){ const d = dist(pet.x,pet.y,e.x,e.y); if(d < bd3){ bd3 = d; tgt = e; } }
-      for(const dr of drones){ const d = dist(pet.x,pet.y,dr.x,dr.y); if(d < bd3){ bd3 = d; tgt = dr; } }
-      if(boss && !boss.entering){ const d = dist(pet.x,pet.y,boss.x,boss.y); if(d < bd3){ bd3 = d; tgt = boss; } }
-      if(tgt){
-        pet.a = lerpAng(pet.a, angTo(pet.x,pet.y,tgt.x,tgt.y), Math.min(1, dt*10));
-        if(pet.cd <= 0){
-          bullets.push({ x:pet.x + Math.cos(pet.a)*12, y:pet.y + Math.sin(pet.a)*12,
-                         vx:Math.cos(pet.a)*500, vy:Math.sin(pet.a)*500, from:'p',
-                         dmg: Math.max(5, Math.round(player.dmg*0.4)), r:3 });
-          sfx.petShot();
-          pet.cd = 0.9;
+      // бомбардировщик: кружит над башней, раз в ~6с вылетает к скоплению и роняет бомбу
+      pet.sortieT = (pet.sortieT ?? 2.5) - dt;
+      if(pet.mode !== 'strike' && pet.mode !== 'return') pet.mode = 'orbit';
+      if(pet.mode === 'orbit' && pet.sortieT <= 0){
+        // цель вылета: враг с максимумом соседей (босс — жирная цель сам по себе)
+        let best = null, bestScore = 0;
+        const cand = (boss && !boss.entering) ? enemies.concat([boss]) : enemies;
+        for(const e of cand){
+          if(dist(player.x, player.y, e.x, e.y) > 560) continue;
+          let sc2 = e === boss ? 2.5 : 1;
+          for(const o of enemies) if(o !== e && dist(e.x, e.y, o.x, o.y) < 80) sc2++;
+          if(sc2 > bestScore){ bestScore = sc2; best = e; }
         }
+        if(best){ pet.mode = 'strike'; pet.tgt = best; pet.gx = best.x; pet.gy = best.y; }
+        else pet.sortieT = 1.2; // некого бомбить — глянем чуть позже
+      }
+      if(pet.mode === 'strike'){
+        const tg = pet.tgt;
+        if(tg && (tg === boss ? !!boss : enemies.includes(tg))){ pet.gx = tg.x; pet.gy = tg.y; } // ведём живую цель
+        const fa = angTo(pet.x, pet.y, pet.gx, pet.gy);
+        pet.a = fa;
+        pet.x += Math.cos(fa)*250*dt; pet.y += Math.sin(fa)*250*dt;
+        if(dist(pet.x, pet.y, pet.gx, pet.gy) < 12){
+          bombs.push({ x: pet.gx, y: pet.gy, t:0, fuse:0.55, r:50,
+                       dmg: Math.max(10, Math.round(player.dmg*1.2)), from:'p' });
+          sfx.petShot();
+          pet.mode = 'return'; pet.tgt = null;
+        }
+      } else if(pet.mode === 'return'){
+        pet.a = lerpAng(pet.a, angTo(pet.x, pet.y, player.x, player.y), Math.min(1, dt*8));
+        if(dist(pet.x, pet.y, tx, ty) < 24){ pet.mode = 'orbit'; pet.sortieT = 6; }
+      } else {
+        // на орбите поглядывает на ближайшего врага
+        let tgt = null, bd3 = 470;
+        for(const e of enemies){ const d = dist(pet.x,pet.y,e.x,e.y); if(d < bd3){ bd3 = d; tgt = e; } }
+        if(tgt) pet.a = lerpAng(pet.a, angTo(pet.x,pet.y,tgt.x,tgt.y), Math.min(1, dt*10));
       }
     } else if(profile.pet === 'heal'){
       if(pet.cd <= 0){
@@ -2494,7 +2520,22 @@ function update(dt){
       }
       sfx.boom();
       state.shake = Math.min(state.shake + (REDUCED?0:5), 10);
-      if(dist(bm.x, bm.y, player.x, player.y) < bm.r + player.r*0.4) damagePlayer(bm.dmg);
+      if(bm.from === 'p'){
+        // бомба Напарника: накрывает врагов, игрока не трогает
+        for(let j = enemies.length-1; j >= 0; j--){
+          const e2 = enemies[j];
+          if(dist(bm.x, bm.y, e2.x, e2.y) < bm.r + e2.r*0.5){
+            e2.hp -= bm.dmg;
+            if(e2.hp <= 0) destroyEnemy(j);
+          }
+        }
+        if(boss && !boss.entering && dist(bm.x, bm.y, boss.x, boss.y) < bm.r + boss.r*0.5){
+          boss.hp -= bm.dmg;
+          if(boss.hp <= 0){ bombs.splice(i,1); onBossKilled(); continue; }
+        }
+        for(let j = barrels.length-1; j >= 0; j--)
+          if(dist(bm.x, bm.y, barrels[j].x, barrels[j].y) < bm.r) explodeBarrel(j);
+      } else if(dist(bm.x, bm.y, player.x, player.y) < bm.r + player.r*0.4) damagePlayer(bm.dmg);
       bombs.splice(i,1);
     }
   }
@@ -3594,10 +3635,11 @@ function render(){
   // телеграф падающих бомб: зона поражения заполняется, бомба снижается
   for(const bm of bombs){
     const k = Math.min(1, bm.t/bm.fuse);
-    ctx.fillStyle = '#ff5540';
+    const telCol = bm.from === 'p' ? '#f1c40f' : '#ff5540'; // своя бомба — жёлтый круг
+    ctx.fillStyle = telCol;
     ctx.globalAlpha = 0.06 + 0.1*k;
     ctx.beginPath(); ctx.arc(bm.x, bm.y, bm.r, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#ff5540';
+    ctx.strokeStyle = telCol;
     ctx.globalAlpha = 0.5 + 0.3*Math.sin(state.time*18);
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(bm.x, bm.y, bm.r, 0, Math.PI*2); ctx.stroke();

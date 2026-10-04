@@ -280,7 +280,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v65';
+const GAME_VERSION = 'v66';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1202,6 +1202,15 @@ const player = {
 const pet = { x:0, y:0, a:0, cd:0, t:0 };
 let bullets = [], enemies = [], pickups = [], particles = [], tracks = [], floats = [];
 let drones = [], bombs = [], barrels = [];
+// позиция ракеты катюши в полёте: дуга от стапеля к цели + курс по касательной
+function rocketPos(bm){
+  const k = Math.min(1, bm.t / bm.fuse);
+  const h = Math.sin(k * Math.PI) * 90; // «высота» дуги
+  return { k,
+    x: bm.sx + (bm.x - bm.sx) * k,
+    y: bm.sy + (bm.y - bm.sy) * k - h,
+    a: Math.atan2((bm.y - bm.sy) - Math.cos(k * Math.PI) * Math.PI * 90, bm.x - bm.sx) };
+}
 let boss = null;
 let waveBanner = { text:'', t:0 };
 let minionTimer = 0;
@@ -2283,8 +2292,12 @@ function update(dt){
     if(e.fireT <= 0){
       if(e.type === 'mortar'){
         if(d < 900){
-          bombs.push({ x: player.x + rand(-34,34), y: player.y + rand(-34,34), t:0, fuse:1.35, r:52, dmg:e.dmg });
-          flash(e.x + Math.cos(e.turret)*(e.r+14), e.y + Math.sin(e.turret)*(e.r+14), e.turret);
+          // ракета стартует со стапеля катюши и летит по дуге всё время «фитиля»
+          const mx0 = e.x + Math.cos(e.turret)*(e.r + 16), my0 = e.y + Math.sin(e.turret)*(e.r + 16);
+          bombs.push({ x: player.x + rand(-34,34), y: player.y + rand(-34,34), t:0, fuse:1.35, r:52, dmg:e.dmg,
+                       sx: mx0, sy: my0, rocket: true, smk: 0 });
+          flash(mx0, my0, e.turret);
+          e.recoil = 1;
           sfx.eshot('mortar');
           e.fireT = rand(e.fireMin, e.fireMax);
         } else e.fireT = 0.4;
@@ -2458,6 +2471,16 @@ function update(dt){
   if(!frozen) for(let i = bombs.length-1; i >= 0; i--){
     const bm = bombs[i];
     bm.t += dt;
+    // ракета катюши дымит в полёте
+    if(bm.rocket && !REDUCED && bm.t < bm.fuse){
+      bm.smk -= dt;
+      if(bm.smk <= 0){
+        const rp = rocketPos(bm);
+        particles.push({ x: rp.x + rand(-2,2), y: rp.y + rand(-2,2), vx: rand(-14,14), vy: rand(-18,2),
+                         g: 0, life: rand(0.35, 0.6), t: 0, r: rand(2, 3.5), color: '#aeb6bd' });
+        bm.smk = 0.05;
+      }
+    }
     if(bm.t >= bm.fuse){
       bigBoom(bm.x, bm.y, '#ff9f43');
       if(!REDUCED){
@@ -3586,9 +3609,32 @@ function render(){
     ctx.moveTo(bm.x, bm.y - 6); ctx.lineTo(bm.x, bm.y + 6);
     ctx.stroke();
     ctx.globalAlpha = 1;
-    // сама бомба падает к точке удара
-    ctx.fillStyle = '#20262c';
-    ctx.beginPath(); ctx.arc(bm.x + 18*(1-k), bm.y - 120*(1-k), 3.5, 0, Math.PI*2); ctx.fill();
+    if(bm.rocket){
+      // ракета катюши летит по дуге: тень на земле, корпус с красным носом, живое пламя
+      const rp = rocketPos(bm);
+      const gx = bm.sx + (bm.x - bm.sx)*k, gy = bm.sy + (bm.y - bm.sy)*k; // точка под ракетой
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath(); ctx.ellipse(gx + 4, gy + 4, 7, 3, 0, 0, Math.PI*2); ctx.fill();
+      ctx.save();
+      ctx.translate(rp.x, rp.y);
+      ctx.rotate(rp.a);
+      const jf = 0.6 + 0.4*Math.sin(state.time*30);       // пламя дышит
+      ctx.fillStyle = '#ff9f43';
+      ctx.globalAlpha = 0.55 + 0.3*jf;
+      ctx.beginPath(); ctx.ellipse(-9 - 4*jf, 0, 4.5 + 2.5*jf, 2.2, 0, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#d6d0a8';                           // корпус
+      rrectC(ctx, -8, -2.4, 14, 4.8, 2); ctx.fill();
+      ctx.fillStyle = '#9a9470';                           // стабилизатор
+      ctx.fillRect(-8, -2.4, 2.6, 4.8);
+      ctx.fillStyle = '#c0392b';                           // нос
+      ctx.beginPath(); ctx.moveTo(6, -2.4); ctx.lineTo(11, 0); ctx.lineTo(6, 2.4); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    } else {
+      // бомба дрона падает к точке удара
+      ctx.fillStyle = '#20262c';
+      ctx.beginPath(); ctx.arc(bm.x + 18*(1-k), bm.y - 120*(1-k), 3.5, 0, Math.PI*2); ctx.fill();
+    }
   }
 
   // лазерные прицелы снайперов (под танками): свечение + ядро + точка на цели

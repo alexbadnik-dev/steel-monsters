@@ -47,6 +47,16 @@ html{height:100%}
   font-family:inherit;padding:0;
 }
 .iconbtn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+/* игровой диалог: тёмная панель в стиле меню вместо системного alert */
+#gdlg{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+  background:#0a0e13b8;padding:20px;pointer-events:auto}
+.gdlgbox{background:linear-gradient(180deg,#1c232b,#141a20);border:2px solid #39434d;border-radius:16px;
+  padding:18px 18px 16px;max-width:min(360px,92vw);max-height:78vh;overflow-y:auto;
+  box-shadow:0 10px 40px #000c;display:flex;flex-direction:column;gap:12px}
+.gdlgbox h2{margin:0;font-family:'Press Start 2P','Russo One',monospace;font-size:13px;color:var(--gold);
+  letter-spacing:1px;text-align:center}
+#gdlgText{font-size:14px;color:var(--ink);line-height:1.5;text-align:left;white-space:pre-line}
+.gdlgrow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 /* выключено: красная рамка и косая черта поверх, как у знака «запрещено» */
 .iconbtn.off{position:relative;border-color:#ff5540aa;background:#2a1a18cc}
 .iconbtn.off::after{content:'';position:absolute;left:6px;right:6px;top:50%;height:3px;margin-top:-1.5px;
@@ -166,6 +176,15 @@ html{height:100%}
 </div>
 
 <div id="wavetitle"></div>
+
+<!-- игровой диалог вместо системных alert/confirm -->
+<div id="gdlg" hidden>
+  <div class="gdlgbox">
+    <h2 id="gdlgTitle"></h2>
+    <div id="gdlgText"></div>
+    <div class="gdlgrow" id="gdlgBtns"></div>
+  </div>
+</div>
 
 <div class="overlay" id="menu">
   <h1>СТАЛЬНЫЕ&nbsp;МОНСТРЫ</h1>
@@ -313,7 +332,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v76';
+const GAME_VERSION = 'v77';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -615,19 +634,21 @@ async function cloudSaveNow(){
 }
 async function cloudRestore(){
   const nm = (profile.name || '').trim().toLowerCase();
-  if(!nm){ alert('Сначала впиши имя танкиста — по нему и найдём профиль.'); return; }
+  if(!nm){ gAlert('☁ ОБЛАКО', 'Сначала впиши имя танкиста — по нему и найдём профиль.'); return; }
   try{
     const r = await fetchT(ONLINE.url + '/rest/v1/profiles?name=eq.' + encodeURIComponent(nm) + '&select=data',
       { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
     const rows = r.ok ? await r.json() : [];
-    if(!rows.length){ alert('Облачного профиля с именем «' + profile.name + '» пока нет.'); return; }
+    if(!rows.length){ gAlert('☁ ОБЛАКО', 'Облачного профиля с именем «' + profile.name + '» пока нет.'); return; }
     const d = rows[0].data || {};
-    if(!confirm('Найден профиль «' + profile.name + '»: ' + (d.coins|0) + ' 🪙, скинов: ' +
-                ((d.skins || []).length) + ', лучшая волна ' + (d.bestWave|0) + '. Загрузить его на это устройство?')) return;
+    const ok = await gConfirm('☁ ПРОФИЛЬ НАЙДЕН',
+      '«' + profile.name + '»\n' + (d.coins|0) + ' 🪙 · скинов: ' + ((d.skins || []).length) +
+      ' · лучшая волна ' + (d.bestWave|0) + '\n\nЗагрузить его на это устройство?');
+    if(!ok) return;
     Object.assign(profile, d, { name: profile.name });
     try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){}
     location.reload();
-  }catch(e){ alert('Не получилось связаться с облаком, попробуй ещё раз.'); }
+  }catch(e){ gAlert('☁ ОБЛАКО', 'Не получилось связаться с облаком, попробуй ещё раз.'); }
 }
 
 // ---------- рейтинг (топ-10 на этом устройстве) ----------
@@ -1533,6 +1554,26 @@ function unlockOrientation(){
   if(!IS_TOUCH) return;
   try{ if(screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); }catch(e){}
 }
+
+// игровые диалоги: gAlert/gConfirm вместо системных alert/confirm
+function gDialog(title, text, buttons){
+  return new Promise(res => {
+    $('gdlgTitle').textContent = title;
+    $('gdlgText').textContent = text;
+    const row = $('gdlgBtns'); row.innerHTML = '';
+    (buttons || [{ label:'ОК', val:true, green:true }]).forEach(b => {
+      const el = document.createElement('button');
+      el.className = 'btn small' + (b.green ? '' : ' gray');
+      el.textContent = b.label;
+      el.addEventListener('click', ()=>{ $('gdlg').hidden = true; res(b.val); });
+      row.append(el);
+    });
+    $('gdlg').hidden = false;
+  });
+}
+const gAlert = (title, text) => gDialog(title, text);
+const gConfirm = (title, text) => gDialog(title, text,
+  [{ label:'ДА', val:true, green:true }, { label:'ОТМЕНА', val:false }]);
 
 function setOverlay(id){
   for(const o of OVERLAYS) $(o).hidden = (o!==id);
@@ -4824,7 +4865,7 @@ async function showPlayerIntel(r){
       } else lines.push('Облачного профиля нет — играет без облака, прокачку не подсмотреть.');
     }
   }catch(e){ lines.push('Профиль не достался — нет связи.'); }
-  alert(lines.join('\n'));
+  gAlert('🔎 РАЗВЕДКА', lines.join('\n'));
 }
 $('boardBtn').addEventListener('click', ()=>{ renderBoard(); setOverlay('board'); });
 $('boardBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
@@ -4862,7 +4903,7 @@ $('nameInput').addEventListener('change', e=>{
   saveProfile();
   updateMenuBest();
   renderDiffRow();
-  alert('Казна восстановлена: +6000 🪙, КОШМАР открыт. Впиши своё имя и в бой!');
+  gAlert('🎁 ПРОМОКОД', 'Казна восстановлена: +6000 🪙, КОШМАР открыт.\nВпиши своё имя и в бой!');
 });
 
 // ---------- выбор сложности ----------

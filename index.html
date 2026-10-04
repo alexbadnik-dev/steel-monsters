@@ -183,6 +183,7 @@ html{height:100%}
   </div>
   <p class="record" id="coinsText"></p>
   <div class="menurow" id="musicRow"></div>
+  <p class="ver" id="outboxNote" style="color:#f1c40f" hidden></p>
   <p class="ver" id="verText"></p>
 </div>
 
@@ -293,7 +294,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v73';
+const GAME_VERSION = 'v74';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1407,7 +1408,8 @@ function startWave(n){
   const dTag = profile.diff === 'norm' ? '' : ' · ' + currentDiff().name;
   if(isBossWave(n)){
     $('wavetext').textContent = (surv ? ('Выживание · волна ' + n + ' · БОСС') : ('Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС')) + dTag;
-    waveBanner = { text: n === TOTAL_WAVES ? 'ФИНАЛЬНЫЙ БОСС!' : ('БОСС ' + bossNumOf(n) + '!'), t: 2.2 };
+    waveBanner = { text: n === TOTAL_WAVES ? 'ФИНАЛЬНЫЙ БОСС!'
+      : ('ВОЛНА ' + n + ' · БОСС ' + (n > TOTAL_WAVES ? '№' : '') + bossNumOf(n) + '!'), t: 2.2 };
     spawnBoss();
   } else {
     $('wavetext').textContent = (surv ? ('Выживание · волна ' + n) : ('Волна ' + n + ' / ' + TOTAL_WAVES)) + dTag;
@@ -1866,6 +1868,7 @@ function beamTick(dt){
     const pr = hitAt(boss.x, boss.y, boss.r);
     if(pr >= 0){
       boss.hp -= dps*dt; sparks(pr);
+      addSuper(dps*dt/3000);
       if(boss.hp <= 0){ onBossKilled(); return; }
     }
   }
@@ -2561,6 +2564,7 @@ function update(dt){
         }
         if(boss && !boss.entering && dist(bm.x, bm.y, boss.x, boss.y) < bm.r + boss.r*0.5){
           boss.hp -= bm.dmg;
+          addSuper(bm.dmg/3000);
           if(boss.hp <= 0){ bombs.splice(i,1); onBossKilled(); continue; }
         }
         for(let j = barrels.length-1; j >= 0; j--)
@@ -2623,6 +2627,7 @@ function update(dt){
       }
       if(!consumed && boss && dist(b.x,b.y,boss.x,boss.y) < boss.r + b.r){
         boss.hp -= b.dmg; consumed = true;
+        addSuper(b.dmg/3000); // бой с боссом тоже заряжает супер
         explode(b.x, b.y, '#f1c40f', 4); sfx.hit();
         if(boss.hp <= 0) onBossKilled();
       }
@@ -4706,7 +4711,8 @@ function renderBoard(){
     const row = document.createElement('div'); row.className = 'boardrow';
     row.innerHTML = '<span class="nm">Загрузка мирового рейтинга...</span>';
     list.append(row);
-    fetchOnline().then(data => {
+    // сперва дошлём результаты из запаса — чтобы свой свежий рекорд сразу был в списке
+    flushOutbox().catch(()=>{}).then(()=> fetchOnline()).then(data => {
       if(boardTab !== 'world') return;
       list.innerHTML = '';
       if(!data || !data.length){
@@ -4972,6 +4978,8 @@ function updateMenuBest(){
   $('coinsText').textContent = '🪙 ' + profile.coins;
   $('nameInput').value = profile.name;
   $('verText').textContent = 'Версия ' + GAME_VERSION;
+  $('outboxNote').hidden = !outbox.length;
+  if(outbox.length) $('outboxNote').textContent = '⚠ Результатов в очереди на отправку: ' + outbox.length + ' — дошлём сами';
   renderClassRow();
   renderDiffRow();
   renderMusicRow();

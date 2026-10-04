@@ -275,7 +275,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v56';
+const GAME_VERSION = 'v57';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1394,10 +1394,20 @@ const OVERLAYS = ['menu','pause','gameover','victory','shop','board','help','per
 // поворачиваться сама, как нативные игры, даже при выключенном автоповороте
 function lockLandscape(){
   if(!IS_TOUCH) return;
-  try{
-    if(screen.orientation && screen.orientation.lock)
-      screen.orientation.lock('landscape').catch(()=>{});
-  }catch(e){}
+  const doLock = () => {
+    try{
+      if(screen.orientation && screen.orientation.lock)
+        screen.orientation.lock('landscape').catch(()=>{});
+    }catch(e){}
+  };
+  // из обычной вкладки сперва уходим в полный экран — тогда Android
+  // разрешает поворот и без установки приложения
+  const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+  if(!standalone && document.documentElement.requestFullscreen && !document.fullscreenElement){
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(doLock).catch(doLock);
+  } else {
+    doLock();
+  }
 }
 function unlockOrientation(){
   if(!IS_TOUCH) return;

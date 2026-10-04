@@ -343,7 +343,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v81';
+const GAME_VERSION = 'v82';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -658,21 +658,23 @@ async function cloudSaveNow(){
 }
 async function cloudRestore(){
   const nm = (profile.name || '').trim().toLowerCase();
-  if(!nm){ gAlert('☁ ОБЛАКО', 'Сначала впиши имя танкиста — по нему и найдём профиль.'); return; }
+  if(!nm){ gAlert('ОБЛАКО', 'Сначала впиши имя танкиста — по нему и найдём профиль.'); return; }
   try{
     const r = await fetchT(ONLINE.url + '/rest/v1/profiles?name=eq.' + encodeURIComponent(nm) + '&select=data',
       { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
     const rows = r.ok ? await r.json() : [];
-    if(!rows.length){ gAlert('☁ ОБЛАКО', 'Облачного профиля с именем «' + profile.name + '» пока нет.'); return; }
+    if(!rows.length){ gAlert('ОБЛАКО', 'Облачного профиля с именем «' + profile.name + '» пока нет.'); return; }
     const d = rows[0].data || {};
-    const ok = await gConfirm('☁ ПРОФИЛЬ НАЙДЕН',
-      '«' + profile.name + '»\n' + (d.coins|0) + ' 🪙 · скинов: ' + ((d.skins || []).length) +
-      ' · лучшая волна ' + (d.bestWave|0) + '\n\nЗагрузить его на это устройство?');
+    const ok = await gConfirm('ПРОФИЛЬ НАЙДЕН',
+      '«' + profile.name + '»\n\nМонеты: ' + ((d.coins|0).toLocaleString('ru-RU')) +
+      '\nСкинов: ' + ((d.skins || []).length) +
+      '\nЛучшая волна: ' + (d.bestWave|0) +
+      '\n\nЗагрузить его на это устройство?');
     if(!ok) return;
     Object.assign(profile, d, { name: profile.name });
     try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){}
     location.reload();
-  }catch(e){ gAlert('☁ ОБЛАКО', 'Не получилось связаться с облаком, попробуй ещё раз.'); }
+  }catch(e){ gAlert('ОБЛАКО', 'Не получилось связаться с облаком, попробуй ещё раз.'); }
 }
 
 // ---------- рейтинг (топ-10 на этом устройстве) ----------
@@ -4909,10 +4911,15 @@ function renderBoardRows(list, rows, showTank, limit, intel){
 async function showPlayerIntel(r){
   const CLSN = { uni:'БАЛБЕС', fast:'ТРУС', heavy:'БЫВАЛЫЙ' };
   const DIFN = { norm:'НОРМА', hard:'ХАРД', night:'КОШМАР' };
-  const lines = ['🪖 ' + String(r.name || 'Аноним').slice(0, 20),
-    'Класс: ' + (CLSN[r.tank] || '—') + ' · сложность: ' + (DIFN[r.diff] || 'НОРМА'),
-    'Волна ' + (r.wave|0) + (r._mw ? ' (макс ' + r._mw + ')' : '') + ' · ' + (r.score|0) + ' очков'
-      + (r.secs ? ' · ⏱' + fmtTime(r.secs) : '') + ' · 🏆 ' + cupsOf(r)];
+  const num = n => (n|0).toLocaleString('ru-RU');
+  const lines = [String(r.name || 'Аноним').slice(0, 20),
+    '',
+    'Класс: ' + (CLSN[r.tank] || '—'),
+    'Сложность: ' + (DIFN[r.diff] || 'НОРМА'),
+    'Волна: ' + (r.wave|0) + (r._mw ? ' (макс ' + r._mw + ')' : ''),
+    'Очки: ' + num(r.score),
+    'Кубки: ' + num(cupsOf(r))];
+  if(r.secs) lines.push('Время боя: ' + fmtTime(r.secs));
   try{
     const nm = String(r.name || '').trim().toLowerCase();
     if(nm && onlineEnabled()){
@@ -4925,14 +4932,16 @@ async function showPlayerIntel(r){
         const u = d.upg || {};
         const ul = UPGRADES.map(x => (u[x.id]|0) > 0 ? x.name + ' ' + '●'.repeat(Math.min(3, u[x.id]|0)) : null)
                            .filter(Boolean);
-        lines.push('— из облачного профиля —');
-        lines.push('Скин: ' + sk + (d.pet ? ' · подмога: ' + ((PETS.find(p => p.id === d.pet) || {}).name || '') : ''));
+        lines.push('', '— облачный профиль —');
+        lines.push('Скин: ' + sk);
+        if(d.pet) lines.push('Подмога: ' + ((PETS.find(p => p.id === d.pet) || {}).name || ''));
         lines.push('Прокачка: ' + (ul.length ? ul.join(', ') : 'ничего не куплено'));
-        lines.push('Монеты: ' + (d.coins|0) + ' · лучшая волна: ' + (d.bestWave|0));
-      } else lines.push('Облачного профиля нет — играет без облака, прокачку не подсмотреть.');
+        lines.push('Монеты: ' + ((d.coins|0).toLocaleString('ru-RU')));
+        lines.push('Лучшая волна: ' + (d.bestWave|0));
+      } else lines.push('', 'Облачного профиля нет — играет без облака, прокачку не подсмотреть.');
     }
-  }catch(e){ lines.push('Профиль не достался — нет связи.'); }
-  gAlert('🔎 РАЗВЕДКА', lines.join('\n'));
+  }catch(e){ lines.push('', 'Профиль не достался — нет связи.'); }
+  gAlert('РАЗВЕДКА', lines.join('\n'));
 }
 $('boardBtn').addEventListener('click', ()=>{ renderBoard(); setOverlay('board'); });
 $('boardBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('menu'); });
@@ -4970,7 +4979,7 @@ $('nameInput').addEventListener('change', e=>{
   saveProfile();
   updateMenuBest();
   renderDiffRow();
-  gAlert('🎁 ПРОМОКОД', 'Казна восстановлена: +6000 🪙, КОШМАР открыт.\nВпиши своё имя и в бой!');
+  gAlert('ПРОМОКОД', 'Казна восстановлена: +6000 🪙, КОШМАР открыт.\nВпиши своё имя и в бой!');
 });
 
 // ---------- выбор сложности ----------
@@ -5090,7 +5099,7 @@ function updateColorSwatch(){
     profile.customColor || skinById(profile.equipped).hull;
 }
 $('skinColor').addEventListener('click', ()=>{
-  $('gdlgTitle').textContent = '🎨 ЦВЕТ ТАНКА';
+  $('gdlgTitle').textContent = 'ЦВЕТ ТАНКА';
   const box = $('gdlgText'); box.innerHTML = '';
   const grid = document.createElement('div'); grid.className = 'palgrid';
   const cur = profile.customColor || skinById(profile.equipped).hull;

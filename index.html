@@ -275,7 +275,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v55';
+const GAME_VERSION = 'v56';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -624,6 +624,30 @@ function submitScore(name, score, wave, tank, diff, secs){
   return board.indexOf(entry) + 1; // 0 — не вошёл в топ
 }
 
+// Страховка от потери результата: каждый старт волны пишем «чек» боя,
+// при честном финале стираем, а при крахе/закрытии — дошлём при запуске.
+function savePending(){
+  try{
+    localStorage.setItem('sm_pending', JSON.stringify({
+      name: profile.name.trim() || 'Аноним', score: state.score, wave: state.wave,
+      tank: profile.tank, diff: profile.diff,
+      cups: cupWaves(state.wave) * (DIFFS[profile.diff] || DIFFS.norm).cups,
+      secs: Math.round(state.playT || 0), ts: Date.now()
+    }));
+  }catch(e){}
+}
+function clearPending(){ try{ localStorage.removeItem('sm_pending'); }catch(e){} }
+function restorePending(){
+  let pend = null;
+  try{ pend = JSON.parse(localStorage.getItem('sm_pending') || 'null'); }catch(e){}
+  clearPending();
+  if(pend && (pend.wave|0) > 1){
+    profile.bestWave = Math.max(profile.bestWave|0, pend.wave|0);
+    saveProfile();
+    submitScore(pend.name, pend.score|0, pend.wave|0, pend.tank, pend.diff, pend.secs|0);
+  }
+}
+
 // Разовая миграция: лучший локальный рекорд, сыгранный ещё до подключения
 // МИРа (например, выживание до 112-й), отправляется в мировую таблицу.
 async function migrateLocalBest(){
@@ -634,8 +658,9 @@ async function migrateLocalBest(){
   if(bst) await pushScore({ name: bst.name, score: bst.score|0, wave: bst.wave|0,
                             tank: bst.tank || 'uni', diff: bst.diff || 'norm', cups: cupsOf(bst) });
 }
-// при старте и при возвращении сети дошлём недоставленные результаты
-setTimeout(()=>{ flushOutbox(); migrateLocalBest(); }, 2500);
+// при старте и при возвращении сети дошлём недоставленные результаты,
+// включая «чек» боя, оборванного закрытием игры
+setTimeout(()=>{ restorePending(); flushOutbox(); migrateLocalBest(); }, 2500);
 window.addEventListener('online', ()=> flushOutbox());
 
 // ---------- checkpoint: продолжить с начала десятки после побеждённого босса ----------
@@ -1282,6 +1307,7 @@ function startWave(n){
   // пустыня: буря придёт в случайный момент волны
   state.stormT = 0;
   state.stormNext = biomeIdx(n) === 1 ? rand(6, 14) : 0;
+  savePending(); // страховочный «чек» боя на случай закрытия игры
   // мутатор декады выживания
   const prevMut = state.mutator;
   state.mutator = mutatorFor(n);
@@ -1479,6 +1505,7 @@ function endGame(win){
   profile.bestWave = Math.max(profile.bestWave|0, state.wave);
   saveProfile();
   const secs = Math.round(state.playT || 0);
+  clearPending(); // бой завершён честно — страховочный чек больше не нужен
   const place = submitScore(profile.name.trim() || 'Аноним', state.score, state.wave, profile.tank, profile.diff, secs);
   const info = '+' + earned + ' 🪙' + (place ? ' · Место в рейтинге: ' + place : '');
   $(win ? 'winPlace' : 'losePlace').textContent = info;
@@ -1711,7 +1738,8 @@ function playerShoot(){
 function beamTick(dt){
   const a = player.turret;
   const ox = player.x + Math.cos(a)*36, oy = player.y + Math.sin(a)*36;
-  const dps = player.dmg * 4; // ~вдвое мощнее пушки, и бьёт сквозь строй
+  // 2.5 пушки по КАЖДОЙ цели на линии (учитывает класс и перки перезарядки)
+  const dps = (player.dmg / (playerClass().cd * (player.cdMult || 1))) * 2.5;
   const hitAt = (tx, ty, tr) => { // проекция цели на луч; -1 если мимо
     const px = tx - ox, py = ty - oy;
     const proj = px*Math.cos(a) + py*Math.sin(a);
@@ -1736,7 +1764,7 @@ function beamTick(dt){
     dr.hp -= dps*dt; sparks(pr);
     if(dr.hp <= 0) destroyDrone(j);
   }
-  if(boss && !boss.entering){
+  if(boss){ // луч жжёт босса и на въезде — как и пули
     const pr = hitAt(boss.x, boss.y, boss.r);
     if(pr >= 0){
       boss.hp -= dps*dt; sparks(pr);
@@ -4180,6 +4208,14 @@ $('winSurviveBtn').addEventListener('click', ()=>{
 });
 $('resumeBtn').addEventListener('click', resumeGame);
 $('quitBtn').addEventListener('click', ()=>{
+  // выход в меню — тоже результат: записываем бой в рейтинг, а не теряем
+  if(state.wave > 1 || state.score > 0){
+    profile.bestWave = Math.max(profile.bestWave|0, state.wave);
+    saveProfile();
+    submitScore(profile.name.trim() || 'Аноним', state.score, state.wave,
+                profile.tank, profile.diff, Math.round(state.playT || 0));
+  }
+  clearPending();
   state.mode = 'menu';
   updateMenuBest();
   setOverlay('menu');
@@ -4397,7 +4433,7 @@ function renderBoard(){
         const mw = maxWave.get(String(r3.name || 'Аноним').trim().toLowerCase()) || 0;
         if(mw > (r3.wave|0)) r3._mw = mw;
       }
-      renderBoardRows(list, uniq, true);
+      renderBoardRows(list, uniq, true, 50); // МИР: топ-50 игроков
     });
     return;
   }
@@ -4410,10 +4446,10 @@ function renderBoard(){
   }
   renderBoardRows(list, rows, boardTab === 'all');
 }
-function renderBoardRows(list, rows, showTank){
+function renderBoardRows(list, rows, showTank, limit){
   const short = { uni:'Б', fast:'Т', heavy:'Бв' };
   const dShort = { hard:'·ХАРД', night:'·КОШМАР' };
-  rows.slice(0, 10).forEach((r, i)=>{
+  rows.slice(0, limit || 10).forEach((r, i)=>{
     const row = document.createElement('div'); row.className = 'boardrow';
     row.innerHTML = '<span class="pl">' + (i+1) + '</span><span class="nm"></span>' +
                     '<span class="wv"></span><span class="sc">🏆 ' + cupsOf(r) + '</span>';

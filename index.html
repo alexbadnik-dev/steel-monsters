@@ -150,7 +150,12 @@ html{height:100%}
 .classdesc{margin:0;font-size:12px;color:var(--ink-dim);min-height:15px}
 .colorrow{display:flex;gap:10px;align-items:center;justify-content:center;pointer-events:auto}
 .colorrow label{font-size:13px;color:var(--ink-dim)}
-#skinColor{width:46px;height:36px;border:2px solid #39434d;border-radius:8px;background:#141a20;padding:2px;cursor:pointer}
+#skinColor{width:46px;height:36px;border:2px solid #39434d;border-radius:8px;background:#141a20;padding:4px;cursor:pointer;pointer-events:auto}
+#skinColor .sw{display:block;width:100%;height:100%;border-radius:4px}
+/* палитра в игровом диалоге: сетка пиксельных образцов */
+.palgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;padding:4px 0}
+.palgrid button{width:40px;height:34px;border-radius:6px;border:2px solid #0a0e13;cursor:pointer;padding:0}
+.palgrid button.cur{outline:3px solid var(--gold);outline-offset:1px}
 @media (prefers-reduced-motion: reduce){ #hpbar{transition:none} }
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Press+Start+2P&display=swap">
@@ -217,7 +222,7 @@ html{height:100%}
   <p id="shopCoins"></p>
   <div class="colorrow">
     <label for="skinColor">Свой цвет:</label>
-    <input type="color" id="skinColor" value="#58d97b">
+    <button id="skinColor" title="Выбрать цвет"><span class="sw"></span></button>
     <button class="btn gray small" id="colorReset">СБРОС</button>
   </div>
   <div class="menurow" id="shopTabs"></div>
@@ -337,7 +342,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v79';
+const GAME_VERSION = 'v80';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -4618,7 +4623,7 @@ let shopTab = 'all';   // раздел магазина
 function renderShop(){
   $('shopCoins').innerHTML = COIN_IMG + ' ' + (profile.coins|0) +
     '<br><span style="font-size:12px;color:var(--ink-dim)">монеты за очки в бою · 20 очков = 1 ' + COIN_IMG + '</span>';
-  $('skinColor').value = profile.customColor || skinById(profile.equipped).hull;
+  updateColorSwatch();
   // вкладки разделов
   const tabs = $('shopTabs');
   tabs.innerHTML = '';
@@ -5072,15 +5077,45 @@ function renderClassRow(){
   $('classDesc').textContent = playerClass().desc;
 }
 
-// ---------- свой цвет скина ----------
-$('skinColor').addEventListener('input', e=>{
-  profile.customColor = e.target.value;
-  saveProfile();
+// ---------- свой цвет скина: наша палитра вместо системного окна ----------
+const PALETTE = [
+  '#4caf50','#2e7d32','#5e7a3a','#7a8a4a','#c2a06b','#8a6d4a',
+  '#b0bec5','#78909c','#4a6572','#3b5a74','#2196f3','#6fd9e8',
+  '#b3202a','#ff5540','#ff9f43','#f1c40f','#ffd84d','#5ef58a',
+  '#f78fb3','#b89be0','#8e44ad','#f3f6f8','#5a6570','#20262e'
+];
+function updateColorSwatch(){
+  $('skinColor').querySelector('.sw').style.background =
+    profile.customColor || skinById(profile.equipped).hull;
+}
+$('skinColor').addEventListener('click', ()=>{
+  $('gdlgTitle').textContent = '🎨 ЦВЕТ ТАНКА';
+  const box = $('gdlgText'); box.innerHTML = '';
+  const grid = document.createElement('div'); grid.className = 'palgrid';
+  const cur = profile.customColor || skinById(profile.equipped).hull;
+  for(const col of PALETTE){
+    const b = document.createElement('button');
+    b.style.background = col;
+    if(col.toLowerCase() === (cur || '').toLowerCase()) b.classList.add('cur');
+    b.addEventListener('click', ()=>{
+      profile.customColor = col;
+      saveProfile(); updateColorSwatch();
+      $('gdlg').hidden = true;
+    });
+    grid.append(b);
+  }
+  box.append(grid);
+  const row = $('gdlgBtns'); row.innerHTML = '';
+  const cls = document.createElement('button');
+  cls.className = 'btn small gray'; cls.textContent = 'ЗАКРЫТЬ';
+  cls.addEventListener('click', ()=>{ $('gdlg').hidden = true; });
+  row.append(cls);
+  $('gdlg').hidden = false;
 });
 $('colorReset').addEventListener('click', ()=>{
   profile.customColor = null;
   saveProfile();
-  $('skinColor').value = skinById(profile.equipped).hull;
+  updateColorSwatch();
 });
 $('pauseBtn').addEventListener('click', pauseGame);
 

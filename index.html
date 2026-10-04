@@ -280,7 +280,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v62';
+const GAME_VERSION = 'v63';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -2951,39 +2951,34 @@ function drawTank(t, opts, c){
     c.fillStyle = darkC;
     rrectC(c, 3*s, -5.5*s, 6*s, 11*s, 2.5*s); c.fill();
   } else if(fx.turret === 'katyusha'){
-    // пакет направляющих вынесен вперёд; трапеция «шире к носу» = наклон вверх
+    // рама-стапель вынесена вперёд, отдельно от кабины; направляющие ровные, параллельные
     c.fillStyle = darkC;
-    c.beginPath();
-    c.moveTo(-1*s, -8.5*s); c.lineTo(30*s, -11.5*s); c.lineTo(30*s, 11.5*s); c.lineTo(-1*s, 8.5*s);
-    c.closePath(); c.fill();
-    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s); c.stroke();
-    // задняя опора-ферма, на которой пакет приподнят
-    c.fillStyle = '#00000044';
-    rrectC(c, -1*s, -7*s, 4*s, 14*s, 1.5*s); c.fill();
-    for(let i=0;i<4;i++){
-      const k = i/1.5 - 1;                   // -1..1
-      const yr = k*5.6, yf = k*8.3;          // рельсы чуть расходятся к носу
-      c.strokeStyle = '#00000055'; c.lineWidth = 1.6*s;
-      c.beginPath(); c.moveTo(1*s, yr*s); c.lineTo(29*s, yf*s); c.stroke();
-      // ракета на рельсе: корпус + стабилизатор сзади + красный нос впереди
-      c.save();
-      c.translate(4*s, yr*s);
-      c.rotate(Math.atan2((yf - yr)*s, 25*s));
-      c.fillStyle = '#d6d0a8';
-      rrectC(c, 0, -2.1*s, 21*s, 4.2*s, 1.8*s); c.fill();
-      c.fillStyle = '#9a9470';
-      c.fillRect(1.5*s, -2.1*s, 2.2*s, 4.2*s);
-      c.fillStyle = '#c0392b';
-      c.beginPath(); c.moveTo(21*s, -2.1*s); c.lineTo(26*s, 0); c.lineTo(21*s, 2.1*s); c.closePath(); c.fill();
-      c.restore();
-    }
-    // кабина-«лицо» на корме — глазам просторно
-    c.fillStyle = tc;
-    rrectC(c, -20*s, -9.5*s, 20*s, 19*s, 4.5*s); c.fill();
+    rrectC(c, 2*s, -10.5*s, 30*s, 21*s, 2.5*s); c.fill();
     c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
-    rrectC(c, -20*s, -9.5*s, 20*s, 19*s, 4.5*s); c.stroke();
+    rrectC(c, 2*s, -10.5*s, 30*s, 21*s, 2.5*s); c.stroke();
+    // поперечины рамы
+    c.fillStyle = '#00000044';
+    c.fillRect(6*s, -10.5*s, 2.5*s, 21*s);
+    c.fillRect(24*s, -10.5*s, 2.5*s, 21*s);
+    for(let i=0;i<4;i++){
+      const y = (-7.9 + i*5.27)*s;
+      c.strokeStyle = '#00000055'; c.lineWidth = 1.4*s;  // рельса
+      c.beginPath(); c.moveTo(3*s, y); c.lineTo(31*s, y); c.stroke();
+      // ракета: стабилизатор сзади, корпус, красный нос
+      c.fillStyle = '#d6d0a8';
+      rrectC(c, 5*s, y - 1.9*s, 20*s, 3.8*s, 1.6*s); c.fill();
+      c.fillStyle = '#9a9470';
+      c.fillRect(6.5*s, y - 1.9*s, 2*s, 3.8*s);
+      c.fillStyle = '#c0392b';
+      c.beginPath(); c.moveTo(25*s, y - 1.9*s); c.lineTo(29.5*s, y); c.lineTo(25*s, y + 1.9*s); c.closePath(); c.fill();
+    }
+    // кабина-«лицо» на корме, зазор отделяет её от пакета
+    c.fillStyle = tc;
+    rrectC(c, -21*s, -9.5*s, 18*s, 19*s, 4.5*s); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1.5, 2*s);
+    rrectC(c, -21*s, -9.5*s, 18*s, 19*s, 4.5*s); c.stroke();
     c.fillStyle = '#ffffff22';
-    rrectC(c, -20*s, -9.5*s, 20*s, 8*s, 4.5*s); c.fill();
+    rrectC(c, -21*s, -9.5*s, 18*s, 8*s, 4.5*s); c.fill();
   } else {
     c.fillStyle = tc;
     c.beginPath(); c.arc(0, 0, 13*s, 0, Math.PI*2); c.fill();
@@ -3011,7 +3006,8 @@ function drawTank(t, opts, c){
   }
 
   // Gerand eyes
-  if(fx.turret === 'sau' || fx.turret === 'katyusha') c.translate(-11*s, 0); // глаза на рубке/кабине
+  if(fx.turret === 'sau') c.translate(-11*s, 0);        // глаза на рубке
+  if(fx.turret === 'katyusha') c.translate(-13*s, 0);   // глаза на кабине, подальше от ракет
   const blink = (opts.blink && opts.blink > 0);
   const eyeH = blink ? 1.6 : 9;
   c.fillStyle = fx.eyeColor || '#fff';

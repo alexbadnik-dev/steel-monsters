@@ -171,7 +171,7 @@ html{height:100%}
   <button class="btn" id="startBtn">В БОЙ!</button>
   <button class="btn gray" id="contBtn" hidden></button>
   <div class="menurow">
-    <button class="btn gray small" id="shopBtn">🛒 МАГАЗИН</button>
+    <button class="btn gray small" id="shopBtn">💰 МАГАЗИН</button>
     <button class="btn gray small" id="perksBtn">⚡ ПРОКАЧКА</button>
     <button class="btn gray small" id="supportBtn">🚁 ПОДМОГА</button>
     <button class="btn gray small" id="boardBtn">🏆 РЕЙТИНГ</button>
@@ -289,7 +289,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v69';
+const GAME_VERSION = 'v70';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -736,14 +736,15 @@ window.addEventListener('online', ()=> flushOutbox());
 function loadCheckpoint(){
   try{
     const v = parseInt(localStorage.getItem('sm_wave')||'1',10);
-    if(v > 1 && v < 100 && (v-1) % 10 === 0) return v; // 11, 21, ... 91
+    if(v > 1 && v <= 101 && (v-1) % 10 === 0) return v; // 11, 21, ... 91, 101
   }catch(e){}
   return 1;
 }
 let checkpoint = loadCheckpoint();
 function saveCheckpoint(n){
-  // чекпоинты только в кампании (волны 11..91); выживание — на один присест
-  if(n % 10 === 1 && n > checkpoint && n > 1 && n <= 91){
+  // чекпоинты в кампании (11..91) + старт выживания (101): прошёл сотню —
+  // больше не гоняешь кампанию заново. Глубже 101-й — на один присест.
+  if(n % 10 === 1 && n > checkpoint && n > 1 && n <= 101){
     checkpoint = n;
     try{ localStorage.setItem('sm_wave', String(n)); }catch(e){}
   }
@@ -1606,6 +1607,7 @@ function endGame(win){
   adBtn.textContent = '🎬 МОНЕТЫ ×2 (+' + earned + ')';
   voice.say(win ? 'Победа. Империя пала.' : 'Танк уничтожен');
   if(win){
+    saveCheckpoint(101); // кампания пройдена — выживание открыто сразу с 101-й
     sfx.win(); vibrate(200);
     $('winScore').textContent = 'Счёт: ' + state.score + ' · ⏱ ' + fmtTime(secs);
     $('winBest').textContent = rec;

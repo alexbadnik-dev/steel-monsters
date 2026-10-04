@@ -107,6 +107,7 @@ html{height:100%}
 .hl{margin:0;padding-left:20px;text-align:left;font-size:13px;color:var(--ink-dim);line-height:1.5;max-width:600px}
 .hl li{margin:2px 0}
 .hl b{color:var(--ink)}
+.pxi{height:13px;width:auto;image-rendering:pixelated;vertical-align:-1px}
 .bonuses{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;color:var(--ink-dim);font-size:12px;max-width:520px}
 .bonuses span{display:flex;align-items:center;gap:6px}
 .chip{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;font-size:11px;color:#101820;flex:none}
@@ -290,7 +291,8 @@ html{height:100%}
 
 <div class="overlay" id="board" hidden>
   <h1>РЕЙТИНГ</h1>
-  <p>1 волна = 1 🏆 · после 100-й (выживание) — ×2 · лучшие бои на этом устройстве</p>
+  <p>1 волна = 1 🏆 · после 100-й — ×2<br>
+  <span style="font-size:12px;color:var(--ink-dim)">вкладки классов — бои на этом устройстве · 🌍 МИР — общий, тапни строку для разведки</span></p>
   <div class="menurow" id="boardTabs"></div>
   <div class="boardlist" id="boardList"></div>
   <button class="btn gray" id="boardBack">НАЗАД</button>
@@ -322,7 +324,10 @@ html{height:100%}
   <p class="record" id="winPlace"></p>
   <p class="classdesc netstat"></p>
   <p>Сто волн, десять генералов — всё в утиль. Можно и компот.</p>
-  <p>…а можно остаться в этом же бою на бесконечное выживание: волны всё злее, боссы идут по второму кругу. До какой дотянешь?</p>
+  <p style="max-width:460px">…а можно остаться на бесконечное ВЫЖИВАНИЕ:<br>
+  <span style="font-size:13px;color:var(--ink-dim)">· волны всё злее, боссы по второму кругу<br>
+  · каждая волна — двойные кубки<br>
+  · до какой дотянешь?</span></p>
   <button class="btn small" id="adCoinsBtnW" hidden>🎬 МОНЕТЫ ×2</button>
   <button class="btn" id="winSurviveBtn">ВЫЖИВАНИЕ ∞</button>
   <button class="btn gray" id="winBtn">ИГРАТЬ СНОВА</button>
@@ -332,7 +337,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v78';
+const GAME_VERSION = 'v79';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -488,6 +493,9 @@ const SKINS = [
   { id:'gorynych',name:'Горыныч',    cost:3000, lock:50, hull:'#3e7a3a', dark:'#1d4a1c', fx:{ pattern:'scales', barrel:'triple', eyeColor:'#ff5540' } },
   { id:'firebird',name:'Жар-птица',  cost:1500, hull:'#ff7b2f', dark:'#8a2f10', fx:{ pattern:'feathers', glow:'#ffb347', sparkle:true } },
   { id:'emelya',  name:'Емеля',      cost:3200, hull:'#f0ead8', dark:'#8a7a60', fx:{ body:'pech' } },
+  // престиж: витрина для ветеранов с полными карманами — чистая косметика
+  { id:'platinum',name:'Платина',    cost:15000, hull:'#dfe6ec', dark:'#7e8c9a', fx:{ sparkle:true, glow:'#cfe4f5' } },
+  { id:'champion',name:'Чемпион',    cost:30000, hull:'#f6d32d', dark:'#8a6d08', fx:{ sparkle:true, glow:'#ffd84d', turret:'wide', pattern:'diamond' } },
   { id:'rainbow', name:'Хамелеон',   cost:2000, hull:'#58d97b', dark:'#1f7a40', fx:{ rainbow:true } }
 ];
 function skinById(id){ return SKINS.find(s => s.id === id) || SKINS[0]; }
@@ -496,8 +504,16 @@ const SKIN_CATS = {
   color: ['green','blue','desert','pink','violet','orange'],
   style: ['camo','melon','taxi','tiger','pirate','double','stealth','robot','police','lava','neon','ufo','gold','rainbow'],
   hero:  ['iron','spider','ghost','gamma','captain','thunder','panther','speed','jester','super','amazon','poseidon','lantern','nightcar'],
-  tale:  ['kolobok','bogatyr','yaga','gorynych','firebird','emelya']
+  tale:  ['kolobok','bogatyr','yaga','gorynych','firebird','emelya'],
+  prest: ['platinum','champion']
 };
+// престиж-трассы: цвет своих выстрелов (чистая косметика за заслуги кошелька)
+const SHOTS = [
+  { id:'emerald', name:'Изумрудный выстрел', color:'#5ef58a', cost:5000 },
+  { id:'ruby',    name:'Рубиновый выстрел',  color:'#ff5558', cost:5000 },
+  { id:'ice',     name:'Ледяной выстрел',    color:'#8fe4ff', cost:5000 }
+];
+function shotColor(){ const s = SHOTS.find(s2 => s2.id === profile.shot); return s ? s.color : '#f1c40f'; }
 function skinCat(id){ for(const k in SKIN_CATS){ if(SKIN_CATS[k].includes(id)) return k; } return 'style'; }
 
 // ---------- питомцы ----------
@@ -576,6 +592,8 @@ function loadProfile(){
       diff: ['norm','hard','night'].includes(p.diff) ? p.diff : 'norm',
       bestWave: Number.isFinite(p.bestWave) ? Math.max(0, p.bestWave|0) : 0,
       secret: typeof p.secret === 'string' ? p.secret.slice(0, 64) : null,
+      shots: Array.isArray(p.shots) ? p.shots.filter(s => typeof s === 'string') : [],
+      shot: typeof p.shot === 'string' ? p.shot : null,
       upg: (u => ({
         med:    Math.min(3, Math.max(0, (u.med|0))),
         shield: Math.min(3, Math.max(0, (u.shield|0))),
@@ -589,7 +607,7 @@ function loadProfile(){
     };
   }catch(e){ return { name:'', coins:0, skins:['green'], equipped:'green', tank:'uni', classes:['uni'], pets:[], pet:null,
                       diff:'norm', bestWave:0, upg:{ med:0, shield:0, rapid:0, triple:0, freeze:0, magnet:0, beam:0 },
-                      customColor:null, secret:null }; }
+                      customColor:null, secret:null, shots:[], shot:null }; }
 }
 const profile = loadProfile();
 // замок облачного профиля: случайный ключ устройства; база принимает изменения
@@ -3925,7 +3943,7 @@ function render(){
       ctx.beginPath(); ctx.moveTo(b.x - ux*L*0.45, b.y - uy*L*0.45); ctx.lineTo(b.x, b.y); ctx.stroke();
       continue;
     }
-    const col = b.from === 'p' ? '#f1c40f' : '#ff8d6b';
+    const col = b.from === 'p' ? shotColor() : '#ff8d6b'; // престиж-трасса красит свои выстрелы
     ctx.strokeStyle = col; ctx.globalAlpha = 0.4; ctx.lineWidth = b.r*1.2;
     ctx.beginPath(); ctx.moveTo(b.x - b.vx*0.03, b.y - b.vy*0.03); ctx.lineTo(b.x, b.y); ctx.stroke();
     ctx.fillStyle = col;
@@ -4598,12 +4616,13 @@ let shopPrevList = []; // живые превью: перерисовывают�
 let perkPrevList = []; // живые ящики на экране прокачки
 let shopTab = 'all';   // раздел магазина
 function renderShop(){
-  $('shopCoins').textContent = '🪙 ' + profile.coins + ' · монеты за очки в бою (20 очков = 1 🪙)';
+  $('shopCoins').innerHTML = COIN_IMG + ' ' + (profile.coins|0) +
+    '<br><span style="font-size:12px;color:var(--ink-dim)">монеты за очки в бою · 20 очков = 1 ' + COIN_IMG + '</span>';
   $('skinColor').value = profile.customColor || skinById(profile.equipped).hull;
   // вкладки разделов
   const tabs = $('shopTabs');
   tabs.innerHTML = '';
-  const STABS = [['all','ВСЕ'],['mine','МОИ'],['color','ЦВЕТА'],['style','СТИЛЬ'],['hero','ГЕРОИ'],['tale','СКАЗКИ']];
+  const STABS = [['all','ВСЕ'],['mine','МОИ'],['color','ЦВЕТА'],['style','СТИЛЬ'],['hero','ГЕРОИ'],['tale','СКАЗКИ'],['prest','ПРЕСТИЖ']];
   for(const [id, label] of STABS){
     const b = document.createElement('button');
     b.className = 'classbtn' + (shopTab === id ? ' sel' : '');
@@ -4662,11 +4681,53 @@ function renderShop(){
     grid.append(card);
   }
 
+  // престиж-трассы: цвет своих выстрелов, только во вкладке ПРЕСТИЖ
+  if(shopTab === 'prest'){
+    for(const s of SHOTS){
+      const card = document.createElement('div'); card.className = 'skincard';
+      const prev = document.createElement('canvas');
+      prev.className = 'prev'; prev.width = 76; prev.height = 76;
+      const pc = prev.getContext('2d');
+      for(const [bx, by] of [[22, 52], [38, 38], [54, 24]]){ // три снаряда в полёте
+        pc.strokeStyle = s.color; pc.globalAlpha = 0.4; pc.lineWidth = 5; pc.lineCap = 'round';
+        pc.beginPath(); pc.moveTo(bx - 9, by + 9); pc.lineTo(bx, by); pc.stroke();
+        pc.globalAlpha = 0.25; pc.fillStyle = s.color;
+        pc.beginPath(); pc.arc(bx, by, 8.5, 0, Math.PI*2); pc.fill();
+        pc.globalAlpha = 1;
+        pc.beginPath(); pc.arc(bx, by, 4.5, 0, Math.PI*2); pc.fill();
+        pc.fillStyle = 'rgba(255,255,255,0.65)';
+        pc.beginPath(); pc.arc(bx, by, 2, 0, Math.PI*2); pc.fill();
+      }
+      const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = s.name;
+      const btn = document.createElement('button'); btn.className = 'skbtn';
+      const owned = profile.shots.includes(s.id);
+      if(profile.shot === s.id){
+        btn.textContent = 'УБРАТЬ'; btn.classList.add('owned');
+        btn.addEventListener('click', ()=>{ profile.shot = null; saveProfile(); renderShop(); });
+      } else if(owned){
+        btn.textContent = 'ВЫБРАТЬ'; btn.classList.add('owned');
+        btn.addEventListener('click', ()=>{ profile.shot = s.id; saveProfile(); renderShop(); });
+      } else {
+        btn.textContent = s.cost + ' 🪙';
+        btn.disabled = profile.coins < s.cost;
+        btn.addEventListener('click', ()=>{
+          if(profile.coins < s.cost) return;
+          profile.coins -= s.cost;
+          profile.shots.push(s.id);
+          profile.shot = s.id;
+          saveProfile(); audio(); sfx.buy();
+          renderShop();
+        });
+      }
+      card.append(prev, nm, btn);
+      grid.append(card);
+    }
+  }
 }
 
 // ---------- подмога: отдельный экран ----------
 function renderSupport(){
-  $('supportCoins').textContent = '🪙 ' + profile.coins;
+  $('supportCoins').innerHTML = COIN_IMG + ' ' + (profile.coins|0);
   const grid = $('supportGrid');
   grid.innerHTML = '';
   for(const p of PETS){
@@ -4720,7 +4781,7 @@ function drawPerkChip(c, type, t){
   c.restore();
 }
 function renderPerks(){
-  $('perkCoins').textContent = '🪙 ' + profile.coins;
+  $('perkCoins').innerHTML = COIN_IMG + ' ' + (profile.coins|0);
   const grid = $('perkGrid');
   grid.innerHTML = '';
   perkPrevList = [];
@@ -4827,7 +4888,7 @@ function renderBoardRows(list, rows, showTank, limit, intel){
   rows.slice(0, limit || 10).forEach((r, i)=>{
     const row = document.createElement('div'); row.className = 'boardrow';
     row.innerHTML = '<span class="pl">' + (i+1) + '</span><span class="nm"></span>' +
-                    '<span class="wv"></span><span class="sc">🏆 ' + cupsOf(r) + '</span>';
+                    '<span class="wv"></span><span class="sc">' + CUP_IMG + ' ' + cupsOf(r) + '</span>';
     // textContent — внешние имена из онлайна не исполняются как HTML
     row.querySelector('.nm').textContent = String(r.name || 'Аноним').slice(0, 20)
       + (showTank && r.tank ? ' · ' + (short[r.tank] || '') : '')
@@ -4928,9 +4989,9 @@ function renderDiffRow(){
     row.append(b);
   }
   const d = currentDiff();
-  $('diffDesc').textContent = d === DIFFS.norm
-    ? 'Обычный бой · 🏆 ×1'
-    : 'HP×' + d.hp + ' · урон×' + d.dmg + ' · 🪙×' + d.coins + ' · 🏆×' + d.cups;
+  $('diffDesc').innerHTML = d === DIFFS.norm
+    ? 'Обычный бой · ' + CUP_IMG + ' ×1'
+    : 'HP×' + d.hp + ' · урон×' + d.dmg + ' · ' + COIN_IMG + '×' + d.coins + ' · ' + CUP_IMG + '×' + d.cups;
 }
 
 // ---------- выбор музыки ----------
@@ -5028,7 +5089,8 @@ const PIX = {
   shop:  ['...##...','..#..#..','...##...','..####..','.##..##.','##....##','##.##.##','.######.'],
   perk:  ['....##..','...##...','..##....','.#####..','...##...','..##....','.##.....','##......'],
   drone: ['##......##','##.#..#.##','...#..#...','..######..','..######..','...#..#...','##.#..#.##','##......##'],
-  cup:   ['########','########','.######.','..####..','...##...','...##...','..####..','.######.'],
+  cup:   ['########','#o######','.#o####.','..####..','...##...','...##...','..####..','.######.'],
+  coin:  ['..####..','.##xx##.','#o#xx###','#o#xx###','#o#xx###','###xx###','.######.','..####..'],
   quest: ['..####..','.##..##.','.....##.','....##..','...##...','........','...##...','...##...'],
   note:  ['....###.','....#.##','....#...','....#...','....#...','.####...','#####...','.###....'],
   guitar:['......##','.....##.','....##..','..###...','.#####..','.##.##..','.#####..','..###...'],
@@ -5039,17 +5101,28 @@ const PIX = {
   speaker:['.....#..','...###..','.#####..','######..','######..','.#####..','...###..','.....#..'],
   pause: ['........','.##..##.','.##..##.','.##..##.','.##..##.','.##..##.','.##..##.','........']
 };
-function pixIcon(name, color, h){
+function pixIcon(name, color, h, pal){
   const g = PIX[name]; if(!g) return document.createElement('span');
   const S = 8;
   const c = document.createElement('canvas');
   c.width = g[0].length*S; c.height = g.length*S;
   const x = c.getContext('2d');
-  x.fillStyle = color || '#101820';
-  g.forEach((row, yy) => { for(let xx = 0; xx < row.length; xx++) if(row[xx] === '#') x.fillRect(xx*S, yy*S, S, S); });
+  g.forEach((row, yy) => {
+    for(let xx = 0; xx < row.length; xx++){
+      const ch = row[xx];
+      if(ch === '.') continue;
+      x.fillStyle = ch === '#' ? (color || '#101820') : ((pal && pal[ch]) || color || '#101820');
+      x.fillRect(xx*S, yy*S, S, S);
+    }
+  });
   c.style.cssText = 'height:' + (h || 15) + 'px;width:auto;image-rendering:pixelated;vertical-align:-2px;flex:none';
   return c;
 }
+// монета и кубок — пиксельные, жёлтое золото как в классике; для вставки в строки
+const COIN_IMG = '<img class="pxi" alt="🪙" src="' +
+  pixIcon('coin', '#f1c40f', 13, { o:'#ffe9a3', x:'#8a6d08' }).toDataURL() + '">';
+const CUP_IMG = '<img class="pxi" alt="🏆" src="' +
+  pixIcon('cup', '#f1c40f', 13, { o:'#ffe9a3' }).toDataURL() + '">';
 function pixify(btn, name, color, h){
   const t = btn.textContent.replace(/^[^\wА-ЯЁа-яё]+\s*/u, ''); // срезаем эмодзи из текста
   btn.textContent = '';
@@ -5088,7 +5161,7 @@ function updateMenuBest(){
   $('menuBest').textContent = 'Рекорд: ' + best;
   $('contBtn').hidden = checkpoint <= 1;
   $('contBtn').textContent = 'С ВОЛНЫ ' + checkpoint;
-  $('coinsText').textContent = '🪙 ' + profile.coins;
+  $('coinsText').innerHTML = COIN_IMG + ' ' + (profile.coins|0);
   $('nameInput').value = profile.name;
   $('verText').textContent = 'Версия ' + GAME_VERSION;
   $('outboxNote').hidden = !outbox.length;

@@ -293,7 +293,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v71';
+const GAME_VERSION = 'v72';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -2184,20 +2184,32 @@ function update(dt){
         else pet.sortieT = 1.2; // некого бомбить — глянем чуть позже
       }
       if(pet.mode === 'strike'){
-        const tg = pet.tgt;
-        if(tg && (tg === boss ? !!boss : enemies.includes(tg))){ pet.gx = tg.x; pet.gy = tg.y; } // ведём живую цель
-        const fa = angTo(pet.x, pet.y, pet.gx, pet.gy);
-        pet.a = fa;
-        pet.x += Math.cos(fa)*250*dt; pet.y += Math.sin(fa)*250*dt;
-        if(dist(pet.x, pet.y, pet.gx, pet.gy) < 12){
-          bombs.push({ x: pet.gx, y: pet.gy, t:0, fuse:0.55, r:50,
-                       dmg: Math.max(10, Math.round(player.dmg*1.2)), from:'p' });
-          sfx.petShot();
-          pet.mode = 'return'; pet.tgt = null;
+        let tg = pet.tgt;
+        // цель погибла в полёте — перенацелимся на ближайшего живого, зря не бомбим
+        if(tg && !(tg === boss ? !!boss : enemies.includes(tg))){
+          tg = null; let bd4 = 340;
+          for(const e of enemies){ const d = dist(pet.x, pet.y, e.x, e.y); if(d < bd4){ bd4 = d; tg = e; } }
+          pet.tgt = tg;
+        }
+        if(!tg){
+          pet.mode = 'return'; // бомбить некого — домой с бомбой
+          pet.sortieT = 1;     // холостой вылет кулдаун не тратит
+        } else {
+          pet.gx = tg.x; pet.gy = tg.y; // ведём живую цель
+          const fa = angTo(pet.x, pet.y, pet.gx, pet.gy);
+          pet.a = fa;
+          pet.x += Math.cos(fa)*250*dt; pet.y += Math.sin(fa)*250*dt;
+          if(dist(pet.x, pet.y, pet.gx, pet.gy) < 12){
+            bombs.push({ x: pet.gx, y: pet.gy, t:0, fuse:0.55, r:50,
+                         dmg: Math.max(10, Math.round(player.dmg*1.2)), from:'p' });
+            sfx.petShot();
+            pet.mode = 'return'; pet.tgt = null;
+            pet.sortieT = 4; // перезарядка идёт уже на обратном пути
+          }
         }
       } else if(pet.mode === 'return'){
         pet.a = lerpAng(pet.a, angTo(pet.x, pet.y, player.x, player.y), Math.min(1, dt*8));
-        if(dist(pet.x, pet.y, tx, ty) < 24){ pet.mode = 'orbit'; pet.sortieT = 6; }
+        if(dist(pet.x, pet.y, tx, ty) < 24) pet.mode = 'orbit'; // кулдаун уже тикает с момента сброса
       } else {
         // на орбите поглядывает на ближайшего врага
         let tgt = null, bd3 = 470;

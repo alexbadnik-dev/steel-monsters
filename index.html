@@ -348,7 +348,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v93';
+const GAME_VERSION = 'v94';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -388,6 +388,13 @@ function adBreak(cb){
   try{ platformAds.fullscreen(fin); }catch(e){ fin(); }
 }
 (function initPlatform(){
+  // на площадках игра называется как в сторе — «Жестянки»;
+  // домашняя версия на своём сайте остаётся «Стальные монстры»
+  if(PLATFORM !== 'web'){
+    document.title = 'Жестянки';
+    const h = document.querySelector('#menu h1');
+    if(h) h.innerHTML = 'ЖЕСТЯНКИ';
+  }
   if(PLATFORM === 'yandex'){
     const s = document.createElement('script');
     s.src = 'https://yandex.ru/games/sdk/v2';

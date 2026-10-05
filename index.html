@@ -343,7 +343,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v87';
+const GAME_VERSION = 'v88';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -820,9 +820,35 @@ async function migrateLocalBest(){
   if(bst) await pushScore({ name: bst.name, score: bst.score|0, wave: bst.wave|0,
                             tank: bst.tank || 'uni', diff: bst.diff || 'norm', cups: cupsOf(bst) });
 }
+// ---------- анонимный пинг устройства: ШТАБ видит даже молчунов без имени ----------
+let DEV_ID = null, DEV_FIRST = Date.now();
+try{
+  DEV_ID = localStorage.getItem('sm_dev');
+  if(!DEV_ID){
+    DEV_ID = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem('sm_dev', DEV_ID);
+  }
+  DEV_FIRST = +localStorage.getItem('sm_devfirst') || Date.now();
+  localStorage.setItem('sm_devfirst', String(DEV_FIRST));
+}catch(e){}
+async function devPing(){
+  if(!DEV_ID || !onlineEnabled()) return;
+  try{
+    await fetchT(ONLINE.url + '/rest/v1/devices', {
+      method: 'POST',
+      headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key,
+                 'Content-Type': 'application/json',
+                 Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ id: DEV_ID, data: {
+        first: DEV_FIRST, last: Date.now(), ver: GAME_VERSION,
+        plat: IS_TOUCH ? 'тел' : 'комп',
+        named: !!(profile.name && profile.name.trim()) } })
+    });
+  }catch(e){}
+}
 // при старте и при возвращении сети дошлём недоставленные результаты,
 // включая «чек» боя, оборванного закрытием игры
-setTimeout(()=>{ restorePending(); flushOutbox(); migrateLocalBest(); cloudSaveSoon(); }, 2500);
+setTimeout(()=>{ restorePending(); flushOutbox(); migrateLocalBest(); cloudSaveSoon(); devPing(); }, 2500);
 window.addEventListener('online', ()=> flushOutbox());
 
 // ---------- checkpoint: продолжить с начала десятки после побеждённого босса ----------
@@ -4975,7 +5001,13 @@ async function showHQ(){
       { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
     rows = r.ok ? await r.json() : [];
   }catch(e){ gAlert('ШТАБ', 'Нет связи с облаком — сводка недоступна.'); return; }
-  if(!rows.length){ gAlert('ШТАБ', 'В облаке пока ни одного бойца.'); return; }
+  let devs = []; // учёт устройств (включая молчунов без имени); таблицы может ещё не быть
+  try{
+    const rd = await fetchT(ONLINE.url + '/rest/v1/devices?select=id,data&limit=500',
+      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
+    devs = rd.ok ? await rd.json() : [];
+  }catch(e){}
+  if(!rows.length && !devs.length){ gAlert('ШТАБ', 'В облаке пока ни одного бойца.'); return; }
   const num = n => (n|0).toLocaleString('ru-RU');
   const day = Date.now() - 24*3600*1000;
   // seen — миллисекундный таймстамп, |0 его обрезает (32 бита) — только Number
@@ -4984,7 +5016,15 @@ async function showHQ(){
                   .sort((a,b) => seenOf(b.d) - seenOf(a.d));
   const today = ppl.filter(p => seenOf(p.d) > day).length;
   const lines = ['Бойцов в облаке: ' + ppl.length,
-                 'Заходили за сутки: ' + today, ''];
+                 'Заходили за сутки: ' + today];
+  const mute = devs.filter(v => !(v.data && v.data.named))
+                   .sort((a,b) => (Number(b.data && b.data.last) || 0) - (Number(a.data && a.data.last) || 0));
+  if(devs.length){
+    const dToday = devs.filter(v => (Number(v.data && v.data.last) || 0) > day).length;
+    lines.push('Устройств всего: ' + devs.length + ' (за сутки: ' + dToday + ')');
+    lines.push('Молчунов без имени: ' + mute.length);
+  }
+  lines.push('');
   ppl.forEach((p, i) => {
     const d = p.d;
     lines.push((i+1) + '. ' + String(p.nm).slice(0, 20)
@@ -4995,6 +5035,13 @@ async function showHQ(){
       + ' · ' + num(d.coins) + ' 🪙');
     lines.push('');
   });
+  if(mute.length){
+    lines.push('— молчуны (зашли, имя не вписали) —');
+    mute.slice(0, 30).forEach(v => {
+      const d = v.data || {};
+      lines.push((d.plat || '?') + ' · ' + (d.ver || '?') + ' · был: ' + agoText(Number(d.last) || 0));
+    });
+  }
   gAlert('ШТАБ', lines.join('\n').trim());
 }
 // вход в ШТАБ: 7 быстрых тапов по строке версии внизу меню

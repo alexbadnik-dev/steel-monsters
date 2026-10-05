@@ -343,7 +343,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v86';
+const GAME_VERSION = 'v87';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1189,7 +1189,9 @@ const ETYPES = {
   kam:     { r:15, hp:18, sp:235, dmg:26, fire:[99,99],   score:120, color:'#ff8d6b', dark:'#8a2f24', scale:0.62, bspd:0,   br:0 },
   // снайпер: держится далеко, целится лазером и бьёт точным мощным выстрелом. Облик — САУ.
   // hp 48: раньше (30) умирал легче рядового — элита должна требовать фокуса (модель balance_snp4)
-  sniper:  { r:18, hp:48, sp:70,  dmg:19, fire:[3.0,4.4], score:210, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:540, br:4, fx:{ turret:'sau', barrel:'long' } },
+  // bspd 850: угол залочен лазером за 0.8с до выстрела, уворот — движением во время
+  // прицеливания; сама пуля должна лететь как винтовочная, 540 ощущалась «плевком»
+  sniper:  { r:18, hp:48, sp:70,  dmg:19, fire:[3.0,4.4], score:210, color:'#b89be0', dark:'#5e4a8a', scale:0.8,  bspd:850, br:4, fx:{ turret:'sau', barrel:'long' } },
   // миномётчик: издалека навешивает бомбы по области (красный круг — точка падения). Облик — катюша.
   mortar:  { r:21, hp:50, sp:42,  dmg:16, fire:[3.6,5.0], score:220, color:'#a8a27a', dark:'#5c5838', scale:0.95, bspd:0, br:0, fx:{ turret:'katyusha', barrel:'none' } },
   // медик: не стреляет, лечит соседних врагов — выбивай первым!
@@ -4563,6 +4565,8 @@ function loop(now){
   if(state.mode === 'play') update(dt);
   else if(state.mode === 'story'){ state.time += dt; story.t += dt; }
   else state.time += dt; // в меню время тоже идёт: живут мигалки, пламя, хамелеон
+  // вне боя тряску гасим здесь: update() не тикает, иначе фон «ПОДБИТ!» дрожит вечно
+  if(state.mode !== 'play' && state.shake > 0) state.shake = Math.max(0, state.shake - dt*18);
   // живые превью скинов, пока открыт магазин
   if(!$('shop').hidden && shopPrevList.length){
     for(const p of shopPrevList){

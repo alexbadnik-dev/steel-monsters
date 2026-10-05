@@ -348,12 +348,17 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v94';
+const GAME_VERSION = 'v95';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+// «камера выше» на телефоне: мир на 25% больше экрана, рисуем мельче —
+// обзор и простор для манёвра как на мониторе; экранные координаты
+// пальца/мыши переводятся в мировые через toWorld()
+const VIEW_SCALE = IS_TOUCH ? 0.8 : 1;
+const toWorld = v => v / VIEW_SCALE;
 
 // ---------- платформа: web / Яндекс Игры / VK (Mail) ----------
 const PLATFORM = (() => {
@@ -500,9 +505,12 @@ function makeScenery(){
 }
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
-  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // мир больше экрана в 1/VIEW_SCALE раза, рендер ужимается обратно трансформом
+  W = Math.round(window.innerWidth / VIEW_SCALE);
+  H = Math.round(window.innerHeight / VIEW_SCALE);
+  canvas.width = Math.round(window.innerWidth * DPR);
+  canvas.height = Math.round(window.innerHeight * DPR);
+  ctx.setTransform(DPR * VIEW_SCALE, 0, 0, DPR * VIEW_SCALE, 0, 0);
   makeScenery();
 }
 window.addEventListener('resize', resize);
@@ -1848,7 +1856,7 @@ document.addEventListener('visibilitychange', ()=>{
 });
 
 const mouse = { x: W/2, y: H/2, down:false, used:false };
-canvas.addEventListener('mousemove', e=>{ mouse.x = e.clientX; mouse.y = e.clientY; mouse.used = true; });
+canvas.addEventListener('mousemove', e=>{ mouse.x = toWorld(e.clientX); mouse.y = toWorld(e.clientY); mouse.used = true; });
 canvas.addEventListener('mousedown', ()=>{
   audio();
   if(state.mode === 'story'){ endStory(); return; }
@@ -1859,23 +1867,26 @@ window.addEventListener('mouseup', ()=> mouse.down = false);
 // touch: left zone = joystick, right zone / fire button = fire
 const joy = { id:null, bx:0, by:0, dx:0, dy:0 };
 const fireTouch = { id:null };
-function fireBtnPos(){ return { x: W - 74, y: H - 96, r: 46 }; }
-function superBtnPos(){ return { x: W - 74, y: H - 196, r: 34 }; }
+// кнопки под пальцами держат ФИЗИЧЕСКИЙ размер: мировые величины
+// компенсируют уменьшение от «камеры выше»
+function fireBtnPos(){ return { x: W - toWorld(74), y: H - toWorld(96), r: toWorld(46) }; }
+function superBtnPos(){ return { x: W - toWorld(74), y: H - toWorld(196), r: toWorld(34) }; }
 
 canvas.addEventListener('touchstart', e=>{
   e.preventDefault(); audio();
   if(state.mode === 'story'){ endStory(); return; }
   for(const t of e.changedTouches){
+    const tx = toWorld(t.clientX), ty = toWorld(t.clientY);
     const sb = superBtnPos();
-    if(state.mode === 'play' && dist(t.clientX, t.clientY, sb.x, sb.y) < sb.r + 10){
+    if(state.mode === 'play' && dist(tx, ty, sb.x, sb.y) < sb.r + 10){
       useSuper();
       continue; // тап по суперу не считается огнём
     }
     const fb = fireBtnPos();
-    if(dist(t.clientX, t.clientY, fb.x, fb.y) < fb.r + 18 || (t.clientX > W*0.62 && joy.id !== null)){
+    if(dist(tx, ty, fb.x, fb.y) < fb.r + 18 || (tx > W*0.62 && joy.id !== null)){
       if(fireTouch.id === null) fireTouch.id = t.identifier;
-    } else if(t.clientX < W*0.62 && joy.id === null){
-      joy.id = t.identifier; joy.bx = t.clientX; joy.by = t.clientY; joy.dx = 0; joy.dy = 0;
+    } else if(tx < W*0.62 && joy.id === null){
+      joy.id = t.identifier; joy.bx = tx; joy.by = ty; joy.dx = 0; joy.dy = 0;
     } else if(fireTouch.id === null){
       fireTouch.id = t.identifier;
     }
@@ -1885,8 +1896,8 @@ canvas.addEventListener('touchmove', e=>{
   e.preventDefault();
   for(const t of e.changedTouches){
     if(t.identifier === joy.id){
-      let dx = t.clientX - joy.bx, dy = t.clientY - joy.by;
-      const m = Math.hypot(dx,dy), R = 54;
+      let dx = toWorld(t.clientX) - joy.bx, dy = toWorld(t.clientY) - joy.by;
+      const m = Math.hypot(dx,dy), R = toWorld(54); // ход стика — прежний под пальцем
       if(m > R){ dx = dx/m*R; dy = dy/m*R; }
       joy.dx = dx; joy.dy = dy;
     }
@@ -2254,6 +2265,15 @@ function dropPickup(x, y){
   let r = Math.random()*total;
   let type = 'med';
   for(const p of picks){ r -= p.w; if(r <= 0){ type = p.type; break; } }
+  // на телефоне дроп не прячется в слепых зонах под пальцами:
+  // из нижних углов (стик слева, кнопки справа) сдвигаем к видимой середине
+  if(IS_TOUCH){
+    const zone = toWorld(230);
+    if(y > H - zone && (x < zone || x > W - zone)){
+      y = H - zone - 20;
+      x = Math.min(Math.max(x, zone*0.6), W - zone*0.6);
+    }
+  }
   pickups.push({ x, y, type, t:0 });
 }
 function applyPickup(p){
@@ -2284,7 +2304,7 @@ function update(dt){
   if(keys['KeyS']||keys['ArrowDown']) my += 1;
   if(keys['KeyA']||keys['ArrowLeft']) mx -= 1;
   if(keys['KeyD']||keys['ArrowRight']) mx += 1;
-  if(joy.id !== null){ mx = joy.dx/54; my = joy.dy/54; }
+  if(joy.id !== null){ mx = joy.dx/toWorld(54); my = joy.dy/toWorld(54); }
   const mlen = Math.hypot(mx,my);
   const BIu = biomeIdx(state.wave);
   const icy = BIu === 2 || BIu === 7; // снега и ледник: гусеницы скользят
@@ -4240,9 +4260,9 @@ function render(){
   if(IS_TOUCH && state.mode === 'play'){
     if(joy.id !== null){
       ctx.strokeStyle = '#ffffff55'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(joy.bx, joy.by, 54, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(joy.bx, joy.by, toWorld(54), 0, Math.PI*2); ctx.stroke();
       ctx.fillStyle = '#ffffff66';
-      ctx.beginPath(); ctx.arc(joy.bx + joy.dx, joy.by + joy.dy, 26, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(joy.bx + joy.dx, joy.by + joy.dy, toWorld(26), 0, Math.PI*2); ctx.fill();
     }
     const fb = fireBtnPos();
     ctx.fillStyle = fireTouch.id !== null ? '#e84c3dcc' : '#e84c3d88';

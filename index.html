@@ -348,7 +348,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v95';
+const GAME_VERSION = 'v96';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1138,7 +1138,8 @@ const music = (() => {
     dendy: {
       // лид на октаву выше ДАНСа, отрывистые 16-е (leadLen), темп заметно бодрее —
       // «чирикающий» верх NES, чтобы не путался с данс-треком
-      name: 'ДЕНДИ', bpm: 168, leadType: 'square', leadVol: 0.024, leadLen: 0.95,
+      // 168 -> 152: лид 16-ми «тараторил» — даём дыхание, рисунок прежний
+      name: 'ДЕНДИ', bpm: 152, leadType: 'square', leadVol: 0.024, leadLen: 0.95,
       bassVol: 0.05, harmVol: 0.016,
       lead: [
         84,88,91,88, 84,0,79,0, 81,83,84,86, 88,0,84,0,

@@ -196,7 +196,7 @@ html{height:100%}
   <h1>СТАЛЬНЫЕ&nbsp;МОНСТРЫ</h1>
   <p>Жестянки наступают, а у нас как раз завалялся танк.<br>Сто волн, десять боссов, ни одного перекура — заводи!</p>
   <input id="nameInput" maxlength="16" placeholder="Имя танкиста" autocomplete="off">
-  <button class="btn gray small" id="cloudBtn">☁ ЗАБРАТЬ ПРОФИЛЬ ИЗ ОБЛАКА</button>
+  <button class="btn gray small" id="cloudBtn">☁ ВЕРНУТЬ ЭКИПАЖ В ТАНК</button>
   <div class="menurow" id="classRow"></div>
   <p class="classdesc" id="classDesc"></p>
   <div class="menurow" id="diffRow"></div>
@@ -343,7 +343,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v85';
+const GAME_VERSION = 'v86';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -672,11 +672,11 @@ async function cloudRestore(){
     const rows = r.ok ? await r.json() : [];
     if(!rows.length){ gAlert('ОБЛАКО', 'Облачного профиля с именем «' + profile.name + '» пока нет.'); return; }
     const d = rows[0].data || {};
-    const ok = await gConfirm('ПРОФИЛЬ НАЙДЕН',
+    const ok = await gConfirm('ЭКИПАЖ НАЙДЕН',
       '«' + profile.name + '»\n\nМонеты: ' + ((d.coins|0).toLocaleString('ru-RU')) +
       '\nСкинов: ' + ((d.skins || []).length) +
       '\nЛучшая волна: ' + (d.bestWave|0) +
-      '\n\nЗагрузить его на это устройство?');
+      '\n\nПосадить экипаж в этот танк?\nВсе на месте, даже собака.');
     if(!ok) return;
     Object.assign(profile, d, { name: profile.name });
     try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){}

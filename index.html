@@ -291,6 +291,11 @@ html{height:100%}
     <li>🔒 Лучшее продаётся <b>по заслугам</b>: Напарник — дойди до 30-й, Горыныч — до 50-й, Ремонтник и КОШМАР — пройди кампанию.</li>
     <li>☁ Впиши <b>имя</b> в меню — рекорды пойдут в мировой рейтинг, а профиль в облако. В МИРе тапни по любой строке — увидишь, кто на чём ездит.</li>
   </ul>
+  <p class="hh">— ОТРЯД СОЗДАТЕЛЕЙ —</p>
+  <ul class="hl">
+    <li>Придумал — юный геймдизайнер <b>Окак</b>, 10 лет</li>
+    <li>Допилили напильником и рубанком — <b>папа</b> и его верный робот <b>Клод</b></li>
+  </ul>
   <button class="btn gray" id="helpBack">НАЗАД</button>
 </div>
 
@@ -343,7 +348,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v88';
+const GAME_VERSION = 'v89';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -362,8 +367,21 @@ const PLATFORM = (() => {
 // единый интерфейс рекламы: на вебе рекламы нет — кнопки просто скрыты
 const platformAds = {
   ready: false,
-  rewarded(cb){ cb(false); }
+  rewarded(cb){ cb(false); },
+  fullscreen(cb){ cb(); }
 };
+// межстраничный ролик МЕЖДУ боями: не чаще раза в 3 минуты, никогда в бою;
+// отсчёт с запуска, чтобы реклама не встречала игрока с порога
+let adBreakT = Date.now();
+function adBreak(cb){
+  if(!platformAds.ready || Date.now() - adBreakT < 180000){ cb(); return; }
+  adBreakT = Date.now();
+  let done = false;
+  const fin = () => { if(done) return; done = true; try{ music.start(); }catch(e){} cb(); };
+  setTimeout(fin, 15000); // SDK молчит — продолжаем без ролика
+  try{ music.stop(); }catch(e){} // на время ролика игра обязана молчать
+  try{ platformAds.fullscreen(fin); }catch(e){ fin(); }
+}
 (function initPlatform(){
   if(PLATFORM === 'yandex'){
     const s = document.createElement('script');
@@ -377,6 +395,11 @@ const platformAds = {
             onRewarded: () => { got = true; },
             onClose: () => cb(got),
             onError: () => cb(false)
+          }});
+        };
+        platformAds.fullscreen = cb => {
+          ysdk.adv.showFullscreenAdv({ callbacks: {
+            onClose: () => cb(), onError: () => cb(), onOffline: () => cb()
           }});
         };
         try{ ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); }catch(e){}
@@ -394,6 +417,10 @@ const platformAds = {
           vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })
             .then(d => cb(!!(d && d.result)))
             .catch(() => cb(false));
+        };
+        platformAds.fullscreen = cb => {
+          vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'interstitial' })
+            .then(() => cb()).catch(() => cb());
         };
       }catch(e){}
     };
@@ -4612,8 +4639,8 @@ function loop(now){
 // ---------- menus / boot ----------
 $('startBtn').addEventListener('click', ()=> startGame());
 $('contBtn').addEventListener('click', ()=> startGame(checkpoint));
-$('retryBtn').addEventListener('click', ()=> startGame(checkpoint > 1 ? checkpoint : 1));
-$('retryStartBtn').addEventListener('click', ()=> startGame());
+$('retryBtn').addEventListener('click', ()=> adBreak(()=> startGame(checkpoint > 1 ? checkpoint : 1)));
+$('retryStartBtn').addEventListener('click', ()=> adBreak(()=> startGame()));
 $('winBtn').addEventListener('click', ()=> startGame());
 $('winSurviveBtn').addEventListener('click', ()=>{
   // продолжаем тот же бой: счёт и прокачка остаются, волны идут дальше
@@ -4639,8 +4666,8 @@ $('quitBtn').addEventListener('click', ()=>{
   updateMenuBest();
   setOverlay('menu');
 });
-$('loseMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); });
-$('winMenuBtn').addEventListener('click', ()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); });
+$('loseMenuBtn').addEventListener('click', ()=> adBreak(()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); }));
+$('winMenuBtn').addEventListener('click', ()=> adBreak(()=>{ state.mode = 'menu'; updateMenuBest(); setOverlay('menu'); }));
 // ×2 монет за rewarded-рекламу (Яндекс/VK)
 function adDoubleCoins(btn){
   btn.disabled = true;

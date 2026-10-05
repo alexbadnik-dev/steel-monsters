@@ -348,7 +348,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v92';
+const GAME_VERSION = 'v93';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -364,6 +364,11 @@ const PLATFORM = (() => {
   }catch(e){}
   return 'web';
 })();
+// язык игры: на площадках определяется автоматически из SDK (п.2.14), по умолчанию русский
+let GAME_LANG = 'ru';
+// разметка геймплея для платформы (п.1.19.3): start — игрок играет, stop — меню/пауза/реклама
+const platformGP = { start(){}, stop(){} };
+let gpPlaying = false;
 // единый интерфейс рекламы: на вебе рекламы нет — кнопки просто скрыты
 const platformAds = {
   ready: false,
@@ -388,6 +393,14 @@ function adBreak(cb){
     s.src = 'https://yandex.ru/games/sdk/v2';
     s.onload = () => {
       YaGames.init().then(ysdk => {
+        // п.2.14 требований: язык определяется автоматически через SDK.
+        // Поддерживаемые локали игры — ['ru']; язык вне списка падает на русский.
+        try{
+          const SUPPORTED = ['ru'];
+          const lang = String((ysdk.environment && ysdk.environment.i18n && ysdk.environment.i18n.lang) || 'ru').slice(0, 2);
+          GAME_LANG = SUPPORTED.includes(lang) ? lang : 'ru';
+          document.documentElement.lang = GAME_LANG;
+        }catch(e){}
         platformAds.ready = true;
         platformAds.rewarded = cb => {
           let got = false;
@@ -403,6 +416,19 @@ function adBreak(cb){
           }});
         };
         try{ ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); }catch(e){}
+        // п.1.19.3: GameplayAPI.start()/stop() — переключает трекер режима в loop
+        try{
+          const gp = ysdk.features && ysdk.features.GameplayAPI;
+          if(gp){
+            platformGP.start = () => { try{ gp.start(); }catch(e){} };
+            platformGP.stop = () => { try{ gp.stop(); }catch(e){} };
+          }
+        }catch(e){}
+        // п.1.19.4: платформа открыла свой оверлей — игра замирает и молчит
+        try{
+          ysdk.on('game_api_pause', () => { pauseGame(); music.stop(); });
+          ysdk.on('game_api_resume', () => { music.start(); });
+        }catch(e){}
       }).catch(()=>{});
     };
     document.head.appendChild(s);
@@ -4624,6 +4650,11 @@ function loop(now){
   else state.time += dt; // в меню время тоже идёт: живут мигалки, пламя, хамелеон
   // вне боя тряску гасим здесь: update() не тикает, иначе фон «ПОДБИТ!» дрожит вечно
   if(state.mode !== 'play' && state.shake > 0) state.shake = Math.max(0, state.shake - dt*18);
+  // п.1.19.3: сообщаем платформе смену «играет ↔ меню/пауза» (ловит все пути смены mode)
+  if((state.mode === 'play') !== gpPlaying){
+    gpPlaying = state.mode === 'play';
+    if(gpPlaying) platformGP.start(); else platformGP.stop();
+  }
   // живые превью скинов, пока открыт магазин
   if(!$('shop').hidden && shopPrevList.length){
     for(const p of shopPrevList){

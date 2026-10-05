@@ -348,7 +348,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v91';
+const GAME_VERSION = 'v92';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1808,7 +1808,11 @@ window.addEventListener('keydown', e=>{
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e=> keys[e.code] = false);
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden) pauseGame(); });
+document.addEventListener('visibilitychange', ()=>{
+  // свернули игру — тишина (требование площадок), вернулись — музыка сама
+  if(document.hidden){ pauseGame(); music.stop(); }
+  else music.start();
+});
 
 const mouse = { x: W/2, y: H/2, down:false, used:false };
 canvas.addEventListener('mousemove', e=>{ mouse.x = e.clientX; mouse.y = e.clientY; mouse.used = true; });
@@ -4671,7 +4675,9 @@ $('winMenuBtn').addEventListener('click', ()=> adBreak(()=>{ state.mode = 'menu'
 // ×2 монет за rewarded-рекламу (Яндекс/VK)
 function adDoubleCoins(btn){
   btn.disabled = true;
+  try{ music.stop(); }catch(e){} // на время ролика игра молчит
   platformAds.rewarded(ok => {
+    try{ music.start(); }catch(e){}
     if(ok && state.lastEarned > 0){
       profile.coins += state.lastEarned;
       saveProfile();

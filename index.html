@@ -1580,7 +1580,10 @@ function spawnBoss(){
   // в выживании (после 100-й) боссы идут по второму кругу, но сильнее
   const def = BOSS_DEFS[(num-1) % BOSS_DEFS.length];
   const D = currentDiff();
-  const hp = Math.round((380 + 240*num + (final ? 400 : 0)) * (def.hpMult || 1) * D.hp
+  // +12% за каждый номер: первый босс прежний, Император ~вдвое крепче (в выживании рост замирает,
+  // дальше крепчает только база 380+240·num)
+  const grow = 1 + 0.12*Math.min(num - 1, 9);
+  const hp = Math.round((380 + 240*num + (final ? 400 : 0)) * grow * (def.hpMult || 1) * D.hp
                         * (mutIs('twins') ? 0.65 : 1)); // двойники делят здоровье
   boss = {
     num, final, def, x: W+140, y: H/2, r: final ? 62 : 52, hp, maxHp:hp,
@@ -1673,7 +1676,8 @@ function startWave(n){
 }
 
 // Класс танка + перки за побеждённых боссов (детерминированно от номера волны).
-// С каждым боссом: +10 HP, +2 урон, −3% перезарядка, +2 скорость, +0.4с к бонусам;
+// С каждым боссом: +12 HP, +20% к базовому урону класса (Балбес +3, Трус +2, Бывалый +6),
+// −3% перезарядка, +2 скорость, +0.3с к бонусам;
 // с 3-го босса открывается регенерация и растёт дальше.
 function applyProgress(wave){
   const cls = playerClass();
@@ -1681,7 +1685,8 @@ function applyProgress(wave){
   const sups = Math.max(0, ups - 10); // сверх-перки выживания: за боссов после 100-й
   const mut = mutatorFor(wave); // мутатор декады влияет и на игрока
   player.maxHp = cls.hp + ups*12 + sups*6;
-  player.dmg = Math.round((cls.dmg + ups*3 + sups*2) * (mut && mut.id === 'duel' ? 1.25 : 1));
+  // проценты, а не плюс-сколько-то всем поровну: иначе быстрый Трус обгонял тяжёлого Бывалого по боссам
+  player.dmg = Math.round(cls.dmg * (1 + ups*0.2 + sups*0.13) * (mut && mut.id === 'duel' ? 1.25 : 1));
   player.speed = (cls.speed + ups*2) * (mut && mut.id === 'blitz' ? 1.3 : 1);
   player.cdMult = Math.max(0.75, 1 - ups*0.03) * (mut && mut.id === 'blitz' ? 0.8 : 1);
   player.regen = ((mut && mut.id === 'vamp') ? 0 : (ups >= 3 ? 0.2*(ups-2) : 0))
@@ -1825,11 +1830,11 @@ function onBossKilled(){
     return;
   }
   // награда: пересчитываем все перки на новый уровень и лечим
+  const hp0 = player.maxHp, dmg0 = player.dmg;
   applyProgress(state.wave + 1);
   player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp*0.5));
   addFloat(player.x, player.y - 44,
-    state.wave >= TOTAL_WAVES ? 'БРОНЯ +18 · СНАРЯД +5 · РУКИ БЫСТРЕЕ' : 'БРОНЯ +12 · СНАРЯД +3 · РУКИ БЫСТРЕЕ',
-    '#6fe58f');
+    'БРОНЯ +' + (player.maxHp - hp0) + ' · СНАРЯД +' + (player.dmg - dmg0) + ' · РУКИ БЫСТРЕЕ', '#6fe58f');
   if(b.num === 3) addFloat(player.x, player.y - 70, 'НОВЫЙ ПЕРК: РЕГЕНЕРАЦИЯ!', '#f1c40f');
   else if(b.num > 3) addFloat(player.x, player.y - 70, 'РЕГЕН +0.2/с · БОНУСЫ ДОЛЬШЕ', '#f1c40f');
   sfx.win();
@@ -2063,8 +2068,8 @@ function leaveTrack(t, scale){
 // ---------- shooting ----------
 function playerShoot(){
   // Тройной бонус; на максимальной прокачке — пять стволов.
-  // Многоствольные скины стреляют из каждого ствола, но каждый — на треть слабее:
-  // Горыныч — три головы, Двустволка — два ствола.
+  // Многоствольные скины делят урон между стволами — по одной цели это честно, как у обычного:
+  // Двустволка по 1/2 на ствол; Горыныч по 0.4 на голову — пасхалка-легенда «+20%», если все три попали.
   const skb = (playerSkin().fx || {}).barrel;
   let offs, lats = null, dmg = player.dmg;
   if(player.tripleT > 0){
@@ -2072,11 +2077,11 @@ function playerShoot(){
   } else if(skb === 'triple'){
     offs = [-0.08, 0, 0.08];
     lats = [-8.5, 0, 8.5];
-    dmg = Math.max(1, Math.round(player.dmg * 2 / 3));
+    dmg = Math.max(1, player.dmg * 0.4);
   } else if(skb === 'double'){
     offs = [-0.05, 0.05];
     lats = [-5.5, 5.5];
-    dmg = Math.max(1, Math.round(player.dmg * 2 / 3));
+    dmg = Math.max(1, player.dmg * 0.5);
   } else {
     offs = [0];
   }

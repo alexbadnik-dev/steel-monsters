@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- «Жестянки» для Android: наша игра целиком внутри APK, работает без интернета. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.okakgames.zhestyanki"
+    android:versionCode="1"
+    android:versionName="1.0.0"
+    android:installLocation="auto">
+
+  <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+
+  <!-- интернет нужен только для общей таблицы рекордов; игра работает и без него -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <!-- отдача по попаданиям и взрывам -->
+  <uses-permission android:name="android.permission.VIBRATE" />
+
+  <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+  <supports-screens android:smallScreens="true" android:normalScreens="true"
+      android:largeScreens="true" android:xlargeScreens="true" android:anyDensity="true" />
+
+  <application
+      android:label="@string/app_name"
+      android:icon="@mipmap/ic_launcher"
+      android:allowBackup="true"
+      android:hardwareAccelerated="true"
+      android:theme="@style/AppTheme">
+
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:label="@string/app_name"
+        android:launchMode="singleTask"
+        android:screenOrientation="sensorLandscape"
+        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|locale|fontScale">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+    <!-- отдаёт кадр победы другим приложениям при «Поделиться» -->
+    <provider
+        android:name=".ShotProvider"
+        android:authorities="com.okakgames.zhestyanki.shots"
+        android:exported="false"
+        android:grantUriPermissions="true" />
+  </application>
+</manifest>

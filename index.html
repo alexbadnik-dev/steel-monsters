@@ -399,6 +399,8 @@ const PLATFORM = (() => {
 })();
 // свой сайт (в том числе внутри APK): можно кэшировать офлайн и давать ссылку в шеринге
 const OWN_SITE = PLATFORM === 'web' || PLATFORM === 'app';
+// внутри APK игра лежит в самом приложении — сервис-воркер там не нужен
+const BUNDLED = location.hostname === 'appassets.androidplatform.net';
 // язык игры: на площадках определяется автоматически из SDK (п.2.14), по умолчанию русский
 let GAME_LANG = 'ru';
 // разметка геймплея для платформы (п.1.19.3): start — игрок играет, stop — меню/пауза/реклама
@@ -6327,7 +6329,7 @@ if(window.claude?.hot?.ready){ window.claude.hot.ready(boot); } else { boot(wind
 </script>
 
 <script>
-if (OWN_SITE && 'serviceWorker' in navigator) { // в контейнерах площадок SW не нужен
+if (OWN_SITE && !BUNDLED && 'serviceWorker' in navigator) { // в контейнерах площадок SW не нужен
   window.addEventListener('load', function(){
     navigator.serviceWorker.register('./sw.js').then(function(reg){
       // проверяем обновления при каждом возвращении в приложение

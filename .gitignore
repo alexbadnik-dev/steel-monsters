@@ -1,2 +1,6 @@
 make_pwa.py
 dist/
+
+# APK: собранные файлы и КЛЮЧ ПОДПИСИ (ключ не должен попасть в публичный репозиторий)
+android/build/
+android/keystore/

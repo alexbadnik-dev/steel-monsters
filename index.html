@@ -378,7 +378,9 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 // «камера выше» на телефоне: мир на 25% больше экрана, рисуем мельче —
 // обзор и простор для манёвра как на мониторе; экранные координаты
 // пальца/мыши переводятся в мировые через toWorld()
-const VIEW_SCALE = IS_TOUCH ? 1/1.2 : 1; // +20% обзора (было +25%, тестеры: «ближе было уютнее»)
+// масштаб мира: 1 = как было до v95. Пробовали +20% обзора на телефоне — поле вышло слишком
+// большим: к боссу не успеть вернуться, свита заходит со спины (полевые испытания 06.10)
+const VIEW_SCALE = 1;
 const toWorld = v => v / VIEW_SCALE;
 
 // ---------- платформа: web / Яндекс Игры / VK (Mail) ----------
@@ -1444,7 +1446,7 @@ const STORY = {
   intro: [
     'ГОД 2077',
     'Ржавые жестянки захватили всё. Даже гаражи.',
-    'Но в гараже №1 завёлся последний танк завода «Сталь».',
+    'Но в гараже №\u00a01 завёлся последний танк завода «Сталь».',
     'Сто волн. Десять генералов. Один ты. По машинам!'
   ],
   bosses: [
@@ -1547,10 +1549,10 @@ function lerpAng(a,b,t){
   return a + d*t;
 }
 
-function spawnEnemy(type, waveN){
+function spawnEnemy(type, waveN, fromSide){
   const T = ETYPES[type] || ETYPES.soldier;
   const D = diffFor(waveN ?? state.wave);
-  const side = Math.floor(rand(0,4));
+  const side = fromSide ?? Math.floor(rand(0,4));
   let x,y;
   if(side===0){ x = rand(40,W-40); y = -50; }
   else if(side===1){ x = W+50; y = rand(40,H-40); }
@@ -1593,7 +1595,7 @@ function spawnBoss(){
     dashT: 5, dashing: 0, dashA: 0, droneT: 5,
     blink:0, nextBlink: rand(1,3), entering:true, enraged:false
   };
-  $('bosslabel').textContent = def.name + (final ? '' : num > BOSS_COUNT ? ' · №' + num : ' · ' + num + '/' + BOSS_COUNT);
+  $('bosslabel').textContent = def.name + (final ? '' : num > BOSS_COUNT ? ' · №\u00a0' + num : ' · ' + num + '/' + BOSS_COUNT);
   $('bossbarwrap').hidden = false;
   minionTimer = 6;
   voice.say(final ? 'Финальный босс. ' + def.name : def.name);
@@ -1649,7 +1651,7 @@ function startWave(n){
   if(isBossWave(n)){
     $('wavetext').textContent = (surv ? ('Выживание · волна ' + n + ' · БОСС') : ('Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС')) + dTag;
     waveBanner = { text: n === TOTAL_WAVES ? 'ФИНАЛЬНЫЙ БОСС!'
-      : ('ВОЛНА ' + n + ' · БОСС ' + (n > TOTAL_WAVES ? '№' : '') + bossNumOf(n)), t: 2.2 }; // без «!» — сливался с цифрой («1!» читалось как «11»)
+      : ('ВОЛНА ' + n + ' · БОСС ' + (n > TOTAL_WAVES ? '№\u00a0' : '') + bossNumOf(n)), t: 2.2 }; // без «!» — сливался с цифрой («1!» читалось как «11»)
     spawnBoss();
   } else {
     $('wavetext').textContent = (surv ? ('Выживание · волна ' + n) : ('Волна ' + n + ' / ' + TOTAL_WAVES)) + dTag;
@@ -2319,7 +2321,8 @@ const PICKS = [
 ];
 function dropPickup(x, y){
   if(mutIs('deficit')) return; // мутатор Дефицит: без ящиков
-  if(Math.random() > currentDiff().drop) return;
+  // в бою с боссом прихвостни роняют ящики вдвое чаще: аптечки/тройной нужны, чтобы дожать генерала
+  if(Math.random() > currentDiff().drop * (boss ? 2 : 1)) return;
   // ЛУЧ — редкий бонус поздних волн (с 60-й)
   const picks = state.wave >= 60 ? PICKS.concat([{ type:'beam', w:0.9 }]) : PICKS;
   const total = picks.reduce((s,p)=>s+p.w,0);
@@ -2411,7 +2414,7 @@ function update(dt){
   if(IS_TOUCH && !mouse.used){
     let best2 = null, bd = Infinity;
     // целимся только в тех, кто уже выехал на поле: пока колонна за краем — не палим впустую
-    const onField = o => o.x > 0 && o.x < W && o.y > 0 && o.y < H;
+    const onField = o => { const m = (o.r || 0)*0.5; return o.x > -m && o.x < W + m && o.y > -m && o.y < H + m; }; // видна хоть наполовину
     for(const e of enemies){ if(!onField(e)) continue; const d = dist(player.x,player.y,e.x,e.y); if(d<bd){ bd=d; best2=e; } }
     for(const dr of drones){ if(!onField(dr)) continue; const d = dist(player.x,player.y,dr.x,dr.y); if(d<bd){ bd=d; best2=dr; } }
     if(boss && onField(boss)){ const d = dist(player.x,player.y,boss.x,boss.y); if(d<bd){ bd=d; best2=boss; } }
@@ -2702,7 +2705,7 @@ function update(dt){
       if(minionTimer <= 0 && enemies.length < (boss.enraged ? 3 : 2)){
         const mt = def.minion === 'mixed'
           ? ['scout','soldier','kam'][Math.floor(rand(0,3))] : def.minion;
-        spawnEnemy(mt);
+        spawnEnemy(mt, undefined, 1); // свита выезжает со стороны генерала (справа), а не игроку в спину
         minionTimer = boss.enraged ? 7 : 9;
       }
     }

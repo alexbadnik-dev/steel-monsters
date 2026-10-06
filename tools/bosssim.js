@@ -19,9 +19,10 @@ const RUNS = +(process.argv[3] || 4);
       state.mode = 'play'; setOverlay(null);
       resetGame(cfg.wave);
       const realMax = player.maxHp;
-      player.maxHp = 1e6; player.hp = 1e6; // бессмертие: меряем урон, а не смерть
+      if(cfg.god !== false){ player.maxHp = 1e6; player.hp = 1e6; } // бессмертие: меряем урон, а не смерть
       let lost = 0;
       enemies = []; drones = []; bullets = []; bombs = []; pickups = []; boss = null;
+      if(cfg.noDecor) decor = []; else if(cfg.freshDecor) makeScenery();
       state.wave = cfg.wave; spawnBoss();
       const maxHp = boss.maxHp;
       const dt = 1/60; let t = 0, side = 1, flipT = 2, hpMin = player.hp, t0 = null;
@@ -55,14 +56,14 @@ const RUNS = +(process.argv[3] || 4);
         if(player.superCharge >= 1 && boss && dist(player.x, player.y, boss.x, boss.y) < 340) useSuper();
         const hp0 = player.hp;
         update(dt); t += dt;
-        if(boss) lost += hp0 - player.hp; // после победы игра сама пересчитывает HP — не урон
+        if(boss && cfg.god !== false) lost += hp0 - player.hp; // после победы игра сама пересчитывает HP — не урон
         if(t0 === null && boss && !boss.entering) t0 = t;
         hpMin = Math.min(hpMin, player.hp);
         if(state.mode !== 'play') break;
         if(!boss && state.mode === 'play'){ break; }
       }
       fireTouch.id = null; joy.id = null;
-      const res = { win: !boss && state.mode !== 'lose', t: Math.round((t - (t0||0))*10)/10, bossHp: maxHp,
+      const res = { win: !boss && state.mode !== 'lose', tAll: Math.round(t*10)/10, hpEnd: Math.round(player.hp/realMax*100), t: Math.round((t - (t0||0))*10)/10, bossHp: maxHp,
                     bossLeft: boss ? Math.round(boss.hp/maxHp*100) : 0,
                     hpLeft: 0, hpMaxP: realMax, dps_in: lost / Math.max(1, t - (t0||0)), realMax };
       state.mode = 'menu'; boss = null; $('bossbarwrap').hidden = true;
@@ -78,6 +79,7 @@ const RUNS = +(process.argv[3] || 4);
     const med = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length/2)] : null; };
     out.push({ ...c, bossHp: rs[0].bossHp, win: wins.length + '/' + RUNS,
                ttk: med(wins.map(r => r.t)), hpMax: rs[0].realMax, lives: med(rs.map(r => r.dps_in > 0.1 ? Math.round(r.realMax / r.dps_in) : 999)),
+               hpEnd: med(wins.map(r => r.hpEnd)), tAll: med(wins.map(r => r.tAll)),
                lossT: med(rs.filter(r => !r.win).map(r => r.t)), bossLeftOnLoss: med(rs.filter(r => !r.win).map(r => r.bossLeft)) });
     console.error(JSON.stringify(out[out.length-1]));
   }

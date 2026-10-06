@@ -1921,9 +1921,12 @@ document.addEventListener('visibilitychange', ()=>{
 
 const mouse = { x: W/2, y: H/2, down:false, used:false };
 canvas.addEventListener('mousemove', e=>{ mouse.x = toWorld(e.clientX); mouse.y = toWorld(e.clientY); mouse.used = true; });
-canvas.addEventListener('mousedown', ()=>{
+canvas.addEventListener('mousedown', e=>{
   audio();
   if(state.mode === 'story'){ endStory(); return; }
+  // щелчок по круглой кнопке супера в углу — супер, а не выстрел
+  const sp = pcSuperPos();
+  if(state.mode === 'play' && dist(toWorld(e.clientX), toWorld(e.clientY), sp.x, sp.y) < sp.r + 4){ useSuper(); return; }
   mouse.down = true;
 });
 window.addEventListener('mouseup', ()=> mouse.down = false);
@@ -1935,6 +1938,7 @@ const fireTouch = { id:null };
 // компенсируют уменьшение от «камеры выше»
 function fireBtnPos(){ return { x: W - toWorld(74), y: H - toWorld(96), r: toWorld(46) }; }
 function superBtnPos(){ return { x: W - toWorld(74), y: H - toWorld(196), r: toWorld(34) }; }
+function pcSuperPos(){ return { x: W - 58, y: H - 58, r: 32 }; } // на компе — индикатор супера в углу (Q)
 
 canvas.addEventListener('touchstart', e=>{
   e.preventDefault(); audio();
@@ -5100,6 +5104,22 @@ function render(){
     ctx.fillStyle = ready ? '#101820' : '#93a1ad';
     ctx.font = '20px "Russo One", sans-serif';
     ctx.fillText('⚡', sb.x, sb.y + 1);
+  }
+  // на компе — такой же круг супера в правом нижнем углу: видно заряд, готов — мигает, подпись Q
+  if(!IS_TOUCH && state.mode === 'play'){
+    const sp = pcSuperPos(), rd = player.superCharge >= 1;
+    ctx.fillStyle = rd ? ('rgba(241,196,15,' + (0.55 + 0.25*Math.sin(state.time*8)) + ')') : '#222a33aa';
+    ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#ffffff44'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.r - 3, -Math.PI/2, -Math.PI/2 + Math.PI*2*player.superCharge); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = rd ? '#101820' : '#93a1ad';
+    ctx.font = '19px "Russo One", sans-serif';
+    ctx.fillText('⚡', sp.x, sp.y - 4);
+    ctx.font = '12px "Russo One", sans-serif';
+    ctx.fillText('Q', sp.x, sp.y + 14);
   }
 
   // сюжетная заставка (кино: полосы, грозовое небо, луна, огонь)

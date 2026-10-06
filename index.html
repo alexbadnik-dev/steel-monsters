@@ -4895,15 +4895,40 @@ function render(){
         ctx.fillStyle = '#20252c'; ctx.fillRect(-15, -6, 8, 2); ctx.fillRect(7, -6, 8, 2);
         ctx.restore();
       }
-      if(bd.spiral){ // шторм: разряды пляшут по корпусу
-        ctx.strokeStyle = '#bfe4ff'; ctx.lineWidth = 2;
-        for(let i=0;i<3;i++){
-          if(((t*3 + i*0.37) % 1) > 0.3) continue;
-          let lx = bx - 60 + i*50, ly = by - 70;
-          ctx.beginPath(); ctx.moveTo(lx, ly);
-          for(let k=0;k<4;k++){ lx += (rnd(Math.floor(t*10) + i*7 + k) - 0.5)*24; ly += 14; ctx.lineTo(lx, ly); }
-          ctx.stroke();
+      if(bd.spiral){ // шторм: остаточный заряд — дуги прыгают по всей броне, корпус в голубом ореоле
+        const fl = 0.5 + 0.5*Math.sin(t*23) * Math.sin(t*7.3);
+        const halo = ctx.createRadialGradient(bx, by - 6, 20, bx, by - 6, 120);
+        halo.addColorStop(0, 'rgba(120,190,255,' + (0.18 + 0.14*fl).toFixed(3) + ')');
+        halo.addColorStop(1, 'rgba(120,190,255,0)');
+        ctx.fillStyle = halo; ctx.fillRect(bx - 120, by - 126, 240, 240);
+        // опорные точки на силуэте брони: корма, башня, лоб, катки
+        const pts = [[-62, 4], [-40, -26], [-8, -32], [22, -24], [58, -6], [64, 10], [30, 26], [-30, 26]];
+        const seed = Math.floor(t*12); // дуги перескакивают ~12 раз в секунду
+        ctx.save();
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.shadowColor = '#7fc8ff'; ctx.shadowBlur = 14;
+        for(let i=0;i<4;i++){
+          if(rnd(seed*5 + i) < 0.3) continue; // часть разрядов гаснет — живое мерцание
+          const a = pts[Math.floor(rnd(seed*3 + i*11)*pts.length)];
+          const b2 = pts[Math.floor(rnd(seed*7 + i*13)*pts.length)];
+          if(a === b2) continue;
+          const path = [[bx + a[0], by + a[1]]];
+          for(let k=1;k<6;k++){ // ломаная с поперечным дрожанием
+            const q = k/6;
+            path.push([bx + a[0] + (b2[0]-a[0])*q + (rnd(seed + i*31 + k) - 0.5)*18,
+                       by + a[1] + (b2[1]-a[1])*q + (rnd(seed + i*37 + k + 5) - 0.5)*18]);
+          }
+          path.push([bx + b2[0], by + b2[1]]);
+          for(const [w, col] of [[5, 'rgba(110,180,255,0.55)'], [1.8, '#f2f9ff']]){ // синий ореол + белое ядро
+            ctx.strokeStyle = col; ctx.lineWidth = w;
+            ctx.beginPath(); ctx.moveTo(path[0][0], path[0][1]);
+            for(const pt of path.slice(1)) ctx.lineTo(pt[0], pt[1]);
+            ctx.stroke();
+          }
+          ctx.fillStyle = '#e8f6ff'; // искры в точках удара
+          for(const pt of [path[0], path[path.length-1]]){ ctx.beginPath(); ctx.arc(pt[0], pt[1], 2.6, 0, Math.PI*2); ctx.fill(); }
         }
+        ctx.restore();
       }
       // пламя
       for(let i=0;i<6;i++){

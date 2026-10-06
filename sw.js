@@ -1,10 +1,11 @@
 // Service worker: страница — сеть-прежде-кэша (обновления подтягиваются сразу,
 // в т.ч. в установленной PWA), остальное — кэш-прежде-сети. Офлайн работает.
-const CACHE = 'steel-monsters-v100-10';
+const CACHE = 'steel-monsters-v100-11';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './app.webmanifest',
   './icon-192.png',
   './icon-512.png',
   './icon-maskable-512.png'

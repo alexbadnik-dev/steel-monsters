@@ -63,7 +63,9 @@ html{height:100%}
 .albumcard{display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:12px;cursor:pointer;
   background:#1c232b;border:2px solid #39434d;color:var(--ink);font:inherit}
 .albumcard canvas{width:100%;height:auto;border-radius:8px;display:block}
-.albumcard span{font-size:11px;font-weight:bold;letter-spacing:.5px;color:var(--gold);text-align:center}
+.albumcard span{font-size:11px;font-weight:bold;letter-spacing:.5px;color:var(--gold);text-align:center;
+  /* место под две строки у всех: длинное имя («ЖЕЛЕЗНЫЙ КУЛАК») иначе растягивало свою карточку */
+  min-height:28px;display:flex;align-items:center;justify-content:center;line-height:1.2}
 .albumcard.locked{cursor:default;opacity:.55}
 .albumcard.locked span{color:var(--ink-dim)}
 /* выключено: красная рамка и косая черта поверх, как у знака «запрещено» */

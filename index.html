@@ -5766,7 +5766,10 @@ async function showHQ(){
       + 'ver:data->>ver,battles:data->battles,bw:data->bestWave,coins:data->coins&order=name', 40);
     rows = lite.map(r => ({ name: r.name, data: { name: r.dn, seen: r.seen, plat: r.plat, ver: r.ver,
                                                   battles: r.battles, bestWave: r.bw, coins: r.coins } }));
-  }catch(e){ gAlert('ШТАБ', 'Нет связи с облаком — сводка недоступна.'); return; }
+  }catch(e){
+    try{ rows = await fetchPaged('/rest/v1/profiles?select=name,data&order=name', 40); } // запасной путь — целиком
+    catch(e2){ gAlert('ШТАБ', 'Нет связи с облаком — сводка недоступна.'); return; }
+  }
   let devs = []; // учёт устройств (включая молчунов без имени); таблицы может ещё не быть
   try{
     const lite = await fetchPaged('/rest/v1/devices?select=id,named:data->named,last:data->last,'

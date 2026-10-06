@@ -324,7 +324,7 @@ html{height:100%}
   <h1>РЕЙТИНГ</h1>
   <p>1 волна = 1 🏆 · после 100-й — ×2<br>
   <span style="font-size:12px;color:var(--ink-dim)">вкладки классов — бои на этом устройстве<br>
-  🌍 МИР — общий · тапни строку для разведки</span></p>
+  🌍 МИР — общий<span id="intelHint"> · тапни строку для разведки</span></span></p>
   <div class="menurow" id="boardTabs"></div>
   <div class="boardlist" id="boardList"></div>
   <button class="btn gray" id="boardBack">НАЗАД</button>
@@ -427,6 +427,11 @@ function adBreak(cb){
     const h = document.querySelector('#menu h1');
     if(h) h.innerHTML = 'ЖЕСТЯНКИ';
   }
+  // на Яндексе профиль синхронизируется сам (облако Яндекса) — кнопка восстановления по имени не нужна
+  if(PLATFORM === 'yandex'){
+    const cb = document.getElementById('cloudBtn'); if(cb) cb.hidden = true;
+    const ih = document.getElementById('intelHint'); if(ih) ih.hidden = true; // разведка — только на сайте
+  }
   if(PLATFORM === 'yandex'){
     const s = document.createElement('script');
     s.src = 'https://yandex.ru/games/sdk/v2';
@@ -455,6 +460,7 @@ function adBreak(cb){
           }});
         };
         try{ ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); }catch(e){}
+        yaAttach(ysdk).catch(() => {}); // облачное сохранение и лидерборд Яндекса
         // п.1.19.3: GameplayAPI.start()/stop() — переключает трекер режима в loop
         try{
           const gp = ysdk.features && ysdk.features.GameplayAPI;
@@ -551,7 +557,7 @@ resize();
 
 // ---------- best score ----------
 function loadBest(){ try{ return parseInt(localStorage.getItem('sm_best')||'0',10)||0; }catch(e){ return 0; } }
-function saveBest(v){ try{ localStorage.setItem('sm_best', String(v)); }catch(e){} }
+function saveBest(v){ try{ localStorage.setItem('sm_best', String(v)); }catch(e){} if(typeof yaSaveSoon === 'function') yaSaveSoon(); }
 let best = loadBest();
 
 // ---------- профиль: имя, монеты, скины ----------
@@ -702,6 +708,8 @@ function loadProfile(){
       shot: typeof p.shot === 'string' ? p.shot : null,
       battles: Number.isFinite(p.battles) ? Math.max(0, p.battles|0) : 0,
       firstSeen: Number.isFinite(p.firstSeen) ? p.firstSeen : 0,
+      savedAt: Number.isFinite(p.savedAt) ? p.savedAt : 0,   // когда сохранён (свежесть для облака Яндекса)
+      yaSent: Number.isFinite(p.yaSent) ? p.yaSent : 0,      // сколько кубков уже ушло в лидерборд Яндекса
       upg: (u => ({
         med:    Math.min(3, Math.max(0, (u.med|0))),
         shield: Math.min(3, Math.max(0, (u.shield|0))),
@@ -739,8 +747,10 @@ if(!profile.classes.includes('uni')) profile.classes.push('uni');
 if(!profile.classes.includes(profile.tank)) profile.classes.push(profile.tank);
 if(profile.pet && !profile.pets.includes(profile.pet)) profile.pet = null;
 function saveProfile(){
+  profile.savedAt = Date.now(); // какая копия свежее — локальная или в облаке Яндекса
   try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){}
   cloudSaveSoon(); // и в облако — чтобы чистка браузера больше ничего не теряла
+  if(typeof yaSaveSoon === 'function') yaSaveSoon();
 }
 
 // ---------- облачный профиль: монеты/скины/прокачка живут и на сервере ----------
@@ -801,7 +811,8 @@ const ONLINE = {
   url: 'https://rlgqylywmbkwaojsgsty.supabase.co',
   key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsZ3F5bHl3bWJrd2FvanNnc3R5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzM3NzEsImV4cCI6MjEwNjU0OTc3MX0.roJLpsi6topofBTuq9kHpM4bJ33pSGXX4Y-IDu5LqU0'
 };
-function onlineEnabled(){ return !!(ONLINE.url && ONLINE.key); }
+// на Яндекс Играх свой рейтинг и облако (сервисы Яндекса): Supabase с мобильного интернета режут (06.10)
+function onlineEnabled(){ return PLATFORM !== 'yandex' && !!(ONLINE.url && ONLINE.key); }
 // fetch с таймаутом: на хилом 4G запрос может висеть минуту — не ждём дольше ms
 function fetchT(url, opts, ms){
   const ac = new AbortController();
@@ -864,6 +875,83 @@ async function fetchOnline(){
   }catch(err){ return null; }
 }
 
+// ---------- Яндекс Игры: облачное сохранение и лидерборд через SDK ----------
+// Сохранение: профиль + чекпоинт + рекорд уезжают в player.setData; на другом устройстве
+// (тот же аккаунт Яндекса) берётся более свежая копия. Лидерборд «cups» — кубки лучшего боя.
+const YA_LB = 'cups';
+const ya = { sdk: null, player: null, ready: false };
+function yaAuthed(){ return !!(ya.player && ya.player.getMode && ya.player.getMode() !== 'lite'); }
+let yaSaveT = null;
+function yaSaveSoon(){
+  try{ if(!ya.player) return; }catch(e){ return; } // вызов до инициализации модуля — пропускаем
+  clearTimeout(yaSaveT);
+  yaSaveT = setTimeout(() => {
+    try{
+      ya.player.setData({ save: { at: Number(profile.savedAt) || Date.now(), profile, cp: checkpoint, best } }, false)
+        .catch(() => {});
+    }catch(e){}
+  }, 3000);
+}
+async function yaAttach(ysdk){
+  ya.sdk = ysdk;
+  try{ ya.player = await ysdk.getPlayer({ scopes: false }); }catch(e){ ya.player = null; }
+  ya.ready = true;
+  if(!ya.player) return;
+  try{
+    const d = await ya.player.getData(['save']);
+    const sv = d && d.save;
+    const cloudAt = Number(sv && sv.at) || 0, localAt = Number(profile.savedAt) || 0;
+    let synced = '';
+    try{ synced = sessionStorage.getItem('sm_ya_sync') || ''; }catch(e){}
+    if(sv && sv.profile && cloudAt > localAt + 1000 && synced !== String(cloudAt)){
+      // в облаке свежее (играли на другом устройстве) — берём его и перезапускаемся один раз
+      try{
+        sessionStorage.setItem('sm_ya_sync', String(cloudAt));
+        localStorage.setItem('sm_profile', JSON.stringify(Object.assign({}, sv.profile, { savedAt: cloudAt })));
+        if((sv.cp|0) > checkpoint) localStorage.setItem('sm_wave', String(sv.cp|0));
+        if((sv.best|0) > best) localStorage.setItem('sm_best', String(sv.best|0));
+      }catch(e){}
+      location.reload();
+      return;
+    }
+    if(!sv || localAt > cloudAt) yaSaveSoon(); // у нас свежее — отправляем наверх
+  }catch(e){}
+  yaSubmitBest(); // рекорд, сыгранный до входа в аккаунт, догонит лидерборд
+}
+// лучший результат отправляем один раз: лидерборд хранит одно число на игрока
+function yaBestEntry(){
+  const all = board.slice().sort((a,b) => cupsOf(b) - cupsOf(a) || (b.score|0) - (a.score|0));
+  return all[0] || null;
+}
+async function yaSubmitBest(){
+  if(!ya.sdk || !yaAuthed()) return false;
+  const e = yaBestEntry();
+  if(!e || cupsOf(e) <= (profile.yaSent|0)) return true;
+  const extra = [e.wave|0, e.tank || 'uni', e.diff || 'norm', e.score|0, e.secs|0].join('|');
+  try{
+    if(ya.sdk.leaderboards && ya.sdk.leaderboards.setScore) await ya.sdk.leaderboards.setScore(YA_LB, cupsOf(e), extra);
+    else { const lb = await ya.sdk.getLeaderboards(); await lb.setLeaderboardScore(YA_LB, cupsOf(e), extra); }
+    profile.yaSent = cupsOf(e);
+    saveProfile();
+    return true;
+  }catch(err){ return false; }
+}
+async function yaFetchBoard(){
+  if(!ya.sdk) return null;
+  const opt = { quantityTop: 50, includeUser: true, quantityAround: 3 };
+  try{
+    let res;
+    if(ya.sdk.leaderboards && ya.sdk.leaderboards.getEntries) res = await ya.sdk.leaderboards.getEntries(YA_LB, opt);
+    else { const lb = await ya.sdk.getLeaderboards(); res = await lb.getLeaderboardEntries(YA_LB, opt); }
+    return (res && res.entries || []).map(en => {
+      const [wave, tank, diff, score, secs] = String(en.extraData || '').split('|');
+      return { name: (en.player && en.player.publicName) || 'Танкист', cups: en.score|0, wave: +wave || 0,
+               tank: tank || 'uni', diff: diff || 'norm', score: +score || 0, secs: +secs || 0 };
+    });
+  }catch(e){ return null; }
+}
+function worldEnabled(){ return onlineEnabled() || (PLATFORM === 'yandex' && ya.ready); }
+
 function fmtTime(s){ s = Math.max(0, Math.round(s || 0)); return Math.floor(s/60) + ':' + String(s % 60).padStart(2, '0'); }
 // кубки: 1 волна = 1 🏆 (на Харде ×2, на Кошмаре ×3); сортируем по кубкам.
 // Выживание ценится выше: каждая волна после 100-й даёт двойные кубки.
@@ -873,7 +961,11 @@ function submitScore(name, score, wave, tank, diff, secs){
   const mult = (DIFFS[diff] || DIFFS.norm).cups;
   const entry = { name, score, wave, tank: tank || 'uni', diff: diff || 'norm',
                   cups: cupWaves(wave) * mult, secs: Math.round(secs || 0), ts: Date.now() };
-  if(onlineEnabled()){
+  if(PLATFORM === 'yandex'){
+    setTimeout(() => yaSubmitBest().then(ok => setNetStat(!yaAuthed()
+      ? '🌍 Войди в Яндекс в рейтинге — и рекорд попадёт в МИР'
+      : ok ? '🌍 Рекорд в рейтинге Яндекса ✓' : '⚠ Рейтинг пока недоступен — дошлём позже')), 50);
+  } else if(onlineEnabled()){
     setNetStat('🌍 Отправка результата...');
     pushScore(entry).then(ok => setNetStat(ok
       ? '🌍 Результат в мировом рейтинге ✓'
@@ -966,6 +1058,7 @@ function saveCheckpoint(n){
   if(n % 10 === 1 && n > checkpoint && n > 1 && n <= 101){
     checkpoint = n;
     try{ localStorage.setItem('sm_wave', String(n)); }catch(e){}
+    yaSaveSoon();
   }
 }
 
@@ -5626,7 +5719,7 @@ function renderBoard(){
   const tabs = $('boardTabs');
   tabs.innerHTML = '';
   const TABS = [['all','ВСЕ'], ['uni','БАЛБЕС'], ['fast','ТРУС'], ['heavy','БЫВАЛЫЙ']];
-  if(onlineEnabled()) TABS.push(['world','🌍 МИР']);
+  if(worldEnabled()) TABS.push(['world','🌍 МИР']);
   for(const [id, label] of TABS){
     const b = document.createElement('button');
     b.className = 'classbtn' + (boardTab === id ? ' sel' : '');
@@ -5642,6 +5735,7 @@ function renderBoard(){
     const row = document.createElement('div'); row.className = 'boardrow';
     row.innerHTML = '<span class="nm">Загрузка мирового рейтинга...</span>';
     list.append(row);
+    if(PLATFORM === 'yandex'){ renderYaWorld(list); return; }
     // сперва дошлём результаты из запаса — чтобы свой свежий рекорд сразу был в списке
     flushOutbox().catch(()=>{}).then(()=> fetchOnline()).then(data => {
       if(boardTab !== 'world') return;
@@ -5679,6 +5773,34 @@ function renderBoard(){
     return;
   }
   renderBoardRows(list, rows, boardTab === 'all');
+}
+// МИР на Яндексе: их лидерборд; без входа в аккаунт — кнопка «войти», рекорд уйдёт сам
+async function renderYaWorld(list){
+  if(!yaAuthed()){
+    const b = document.createElement('button');
+    b.className = 'btn small';
+    b.textContent = 'ВОЙТИ В ЯНДЕКС — ПОПАСТЬ В РЕЙТИНГ';
+    b.style.margin = '6px auto 10px'; b.style.display = 'block';
+    b.addEventListener('click', async () => {
+      try{
+        await ya.sdk.auth.openAuthDialog();
+        ya.player = await ya.sdk.getPlayer({ scopes: false });
+        await yaSubmitBest();
+      }catch(e){}
+      renderBoard();
+    });
+    list.prepend(b);
+  }
+  const data = await yaFetchBoard();
+  if(boardTab !== 'world') return;
+  [...list.querySelectorAll('.boardrow')].forEach(r => r.remove());
+  if(!data || !data.length){
+    const r2 = document.createElement('div'); r2.className = 'boardrow';
+    r2.innerHTML = '<span class="nm">' + (data ? 'В рейтинге пока пусто — стань первым!' : 'Рейтинг недоступен, попробуй позже') + '</span>';
+    list.append(r2);
+    return;
+  }
+  renderBoardRows(list, data, true, 50, false);
 }
 function renderBoardRows(list, rows, showTank, limit, intel){
   const short = { uni:'Б', fast:'Т', heavy:'Бв' };

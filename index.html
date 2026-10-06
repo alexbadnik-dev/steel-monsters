@@ -380,7 +380,11 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 // пальца/мыши переводятся в мировые через toWorld()
 // +20% обзора на телефоне (игроки просили больше места: было +25%, сошлись на +20%).
 // В бою с боссом большое поле мешало, пока свита заходила со спины — теперь она едет со стороны босса
-const VIEW_SCALE = IS_TOUCH ? 1/1.2 : 1;
+// На компе поле не выше 700 единиц: на большом мониторе всё крупнее, а не мельче,
+// и у всех примерно одинаковое поле (честно для рейтинга). Маленькие экраны не ужимаем.
+const VIEW_H_MAX = 700;
+let VIEW_SCALE = IS_TOUCH ? 1/1.2 : 1;
+function viewScaleFor(h){ return IS_TOUCH ? 1/1.2 : Math.max(1, h / VIEW_H_MAX); }
 const toWorld = v => v / VIEW_SCALE;
 
 // ---------- платформа: web / Яндекс Игры / VK (Mail) ----------
@@ -532,6 +536,7 @@ let winW = 0, winH = 0;
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   winW = window.innerWidth; winH = window.innerHeight;
+  VIEW_SCALE = viewScaleFor(winH);
   // мир больше экрана в 1/VIEW_SCALE раза, рендер ужимается обратно трансформом
   W = Math.round(window.innerWidth / VIEW_SCALE);
   H = Math.round(window.innerHeight / VIEW_SCALE);
@@ -1938,7 +1943,7 @@ const fireTouch = { id:null };
 // компенсируют уменьшение от «камеры выше»
 function fireBtnPos(){ return { x: W - toWorld(74), y: H - toWorld(96), r: toWorld(46) }; }
 function superBtnPos(){ return { x: W - toWorld(74), y: H - toWorld(196), r: toWorld(34) }; }
-function pcSuperPos(){ return { x: W - 58, y: H - 58, r: 32 }; } // на компе — индикатор супера в углу (Q)
+function pcSuperPos(){ return { x: W - toWorld(58), y: H - toWorld(58), r: toWorld(32) }; } // на компе — индикатор супера в углу (Q)
 
 canvas.addEventListener('touchstart', e=>{
   e.preventDefault(); audio();

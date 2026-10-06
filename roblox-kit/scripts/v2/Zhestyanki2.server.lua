@@ -15,6 +15,9 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local aimEvent = ReplicatedStorage:FindFirstChild("Aim") or Instance.new("RemoteEvent")
+aimEvent.Name = "Aim"
+aimEvent.Parent = ReplicatedStorage
 local fireEvent = ReplicatedStorage:FindFirstChild("Fire") or Instance.new("RemoteEvent")
 fireEvent.Name = "Fire"
 fireEvent.Parent = ReplicatedStorage
@@ -27,7 +30,7 @@ waveText.Parent = ReplicatedStorage
 local ARENA = 90            -- поле от -ARENA до +ARENA стадов
 local BOSS_EVERY = 10
 local TOTAL_WAVES = 100
-local SPRITE_YAW = 0        -- поворот картинок танков (0 / 180 / 90 / -90)
+local SPRITE_YAW = 180      -- поворот картинок танков (0 / 180 / 90 / -90); 180 — по тесту в Studio
 local PLAYER_SPEED = 20     -- скорость танка игрока (стад/с)
 local SHOT = { dmg = 15, cooldown = 0.24, rapidCooldown = 0.11, speed = 56 }
 local DROP_CHANCE = 0.32    -- шанс ящика с врага (как на Норме)
@@ -65,6 +68,26 @@ local IMG = {
 		{ "rainbow", "139075918966520" }, { "platinum", "118894282480662" }, { "champion", "130889872590043" },
 	},
 }
+
+-- ЛИСТЫ «корпус + башня» (sheets/tanks_hull.png и sheets/tanks_turret.png): загрузи обе картинки
+-- в Asset Manager и впиши их номера сюда. Пока пусто — танки цельные (башня не крутится).
+local SHEET_HULL = ""
+local SHEET_TURRET = ""
+local CELL, COLS = 128, 8
+local CELLS = {
+	"skin:green", "skin:blue", "skin:desert", "skin:pink", "skin:violet", "skin:orange",
+	"skin:camo", "skin:melon", "skin:taxi", "skin:tiger", "skin:pirate", "skin:double",
+	"skin:stealth", "skin:robot", "skin:police", "skin:iron", "skin:spider", "skin:ghost",
+	"skin:gamma", "skin:captain", "skin:thunder", "skin:panther", "skin:lava", "skin:neon",
+	"skin:ufo", "skin:gold", "skin:speed", "skin:jester", "skin:super", "skin:amazon",
+	"skin:poseidon", "skin:lantern", "skin:nightcar", "skin:kolobok", "skin:bogatyr", "skin:yaga",
+	"skin:gorynych", "skin:firebird", "skin:emelya", "skin:platinum", "skin:champion", "skin:rainbow",
+	"enemy:scout", "enemy:soldier", "enemy:heavy", "enemy:kam", "enemy:sniper", "enemy:mortar",
+	"enemy:medic", "boss:1", "boss:2", "boss:3", "boss:4", "boss:5",
+	"boss:6", "boss:7", "boss:8", "boss:9", "boss:10"
+}
+local CELL_OF = {}
+for i, k in ipairs(CELLS) do CELL_OF[k] = i end
 
 -- враги: hp, скорость, урон, интервал стрельбы, size — «тело» для попаданий, keep — дистанция
 local ETYPES = {
@@ -132,6 +155,33 @@ local function makeSprite(imageId, visual)
 	end
 	return p
 end
+-- клетка листа на верхней грани невидимой детали (SurfaceGui + кусок большой картинки)
+local function sheetSprite(sheetId, cell, visual)
+	local p = makeSprite("", visual)
+	local g = Instance.new("SurfaceGui")
+	g.Face = Enum.NormalId.Top
+	g.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	g.PixelsPerStud = 24
+	g.LightInfluence = 0
+	local im = Instance.new("ImageLabel")
+	im.Size = UDim2.fromScale(1, 1)
+	im.BackgroundTransparency = 1
+	im.Image = asset(sheetId)
+	local i = cell - 1
+	im.ImageRectOffset = Vector2.new((i % COLS) * CELL, math.floor(i / COLS) * CELL)
+	im.ImageRectSize = Vector2.new(CELL, CELL)
+	im.Parent = g
+	g.Parent = p
+	return p
+end
+-- танк: корпус + отдельная башня (если листы загружены), иначе цельная картинка
+local function makeTank(key, fallbackImg, visual)
+	local cell = CELL_OF[key]
+	if SHEET_HULL ~= "" and SHEET_TURRET ~= "" and cell then
+		return sheetSprite(SHEET_HULL, cell, visual), sheetSprite(SHEET_TURRET, cell, visual)
+	end
+	return makeSprite(fallbackImg, visual), nil
+end
 local function spriteCF(pos, dir)
 	return CFrame.lookAt(pos, pos + dir) * CFrame.Angles(0, math.rad(SPRITE_YAW), 0)
 end
@@ -182,7 +232,7 @@ local function onCharacter(pl, ch)
 		elseif d:IsA("Decal") then d.Transparency = 1 end
 	end
 	local skin = IMG.skins[(pstate[pl] and pstate[pl].skinIndex) or 1]
-	local spr = makeSprite(skin[2], 7.5)
+	local spr, tur = makeTank("skin:" .. skin[1], skin[2], 7.5)
 	spr.Name = "TankSprite"
 	spr.Anchored = false
 	spr.Massless = true
@@ -192,18 +242,28 @@ local function onCharacter(pl, ch)
 	local w = Instance.new("WeldConstraint")
 	w.Part0 = root; w.Part1 = spr; w.Parent = spr
 	spr.Parent = ch
+	local st = pstate[pl]
+	if st then
+		if st.tur then st.tur:Destroy() end
+		st.tur, st.below = tur, below
+		if tur then tur.Parent = workspace end -- башня отдельно: крутится за прицелом
+		hum.Died:Connect(function() if st.tur == tur and tur then tur:Destroy(); st.tur = nil end end)
+	end
 end
 local function initPlayer(pl)
 	if pstate[pl] then return end
 	skinCounter = skinCounter + 1
-	pstate[pl] = { last = 0, rapidUntil = 0, tripleUntil = 0, skinIndex = ((skinCounter - 1) % #IMG.skins) + 1 }
+	pstate[pl] = { last = 0, rapidUntil = 0, tripleUntil = 0, skinIndex = ((skinCounter - 1) % #IMG.skins) + 1, aim = nil }
 	setupLeaderstats(pl)
 	pl.CharacterAdded:Connect(function(ch) onCharacter(pl, ch) end)
 	if pl.Character then task.spawn(onCharacter, pl, pl.Character) end
 end
 Players.PlayerAdded:Connect(initPlayer)
 for _, pl in ipairs(Players:GetPlayers()) do initPlayer(pl) end -- в Studio игрок может войти раньше скрипта
-Players.PlayerRemoving:Connect(function(pl) pstate[pl] = nil end)
+Players.PlayerRemoving:Connect(function(pl)
+	if pstate[pl] and pstate[pl].tur then pstate[pl].tur:Destroy() end
+	pstate[pl] = nil
+end)
 
 -- ---------- пули ----------
 local function spawnBullet(origin, dir, speed, dmg, owner)
@@ -285,12 +345,13 @@ local function spawnEnemy(typeName, n, side)
 	local T = ETYPES[typeName] or ETYPES.soldier
 	local D = diffFor(n)
 	local x, z = edgePoint(side or math.random(1, 4))
-	local part = makeSprite(IMG.enemies[typeName], T.size * 2.1) -- картинка крупнее «тела»: у спрайта поля
+	local part, tur = makeTank("enemy:" .. typeName, IMG.enemies[typeName], T.size * 2.1) -- картинка крупнее «тела»: у спрайта поля
 	part.Name = "Enemy_" .. typeName
 	part.CFrame = spriteCF(Vector3.new(x, 0.3, z), Vector3.new(-x, 0, -z))
 	part.Parent = workspace
+	if tur then tur.CFrame = spriteCF(Vector3.new(x, 0.36, z), Vector3.new(-x, 0, -z)); tur.Parent = workspace end
 	local hp = T.hp * D.hp
-	table.insert(enemies, { part = part, hp = hp, maxHp = hp, t = T, dmg = T.dmg * D.dmg, hitR = T.size / 2 + 0.6,
+	table.insert(enemies, { part = part, tur = tur, hp = hp, maxHp = hp, t = T, dmg = T.dmg * D.dmg, hitR = T.size / 2 + 0.6,
 		fireT = T.fire and rand(T.fire[1], T.fire[2]) or 99, strafe = (math.random() < 0.5) and 1 or -1 })
 end
 local function spawnBoss(n)
@@ -302,11 +363,12 @@ local function spawnBoss(n)
 	local hp = (380 + 240 * num + (final and 400 or 0)) * grow * (def.hpMult or 1)
 	-- игроков больше — босс крепче (каждый следующий +60%)
 	hp = hp * (1 + 0.6 * math.max(0, #alivePlayers() - 1))
-	local part = makeSprite(IMG.bosses[idx], final and 22 or 19)
+	local part, tur = makeTank("boss:" .. idx, IMG.bosses[idx], final and 22 or 19)
 	part.Name = "Boss"
 	part.CFrame = spriteCF(Vector3.new(ARENA * 0.55, 0.3, 0), Vector3.new(-1, 0, 0))
 	part.Parent = workspace
-	local e = { part = part, hp = hp, maxHp = hp, boss = true, def = def, num = num, hitR = final and 7 or 6,
+	if tur then tur.CFrame = spriteCF(Vector3.new(ARENA * 0.55, 0.36, 0), Vector3.new(-1, 0, 0)); tur.Parent = workspace end
+	local e = { part = part, tur = tur, hp = hp, maxHp = hp, boss = true, def = def, num = num, hitR = final and 7 or 6,
 		dmg = 12 + num, fireT = 1.2, pattern = 0, minionT = 6, t = { speed = 6 * (def.speed or 1), keep = 34 } }
 	addHpBar(e, def.name)
 	table.insert(enemies, e)
@@ -332,6 +394,10 @@ local function bossShoot(e, target)
 		end
 	end
 end
+local function removeParts(e)
+	e.part:Destroy()
+	if e.tur then e.tur:Destroy() end
+end
 local function killEnemy(i, killer)
 	local e = enemies[i]
 	table.remove(enemies, i)
@@ -345,7 +411,7 @@ local function killEnemy(i, killer)
 		dropPickup(e.part.Position)
 	end
 	boomFx(e.part.Position, e.boss and 12 or 4)
-	e.part:Destroy()
+	removeParts(e)
 end
 
 -- ---------- бочки и ежи ----------
@@ -401,17 +467,21 @@ explodeBarrel = function(idx, killer)
 end
 
 local function clearAll()
-	for _, e in ipairs(enemies) do e.part:Destroy() end
+	for _, e in ipairs(enemies) do removeParts(e) end
 	for _, b in ipairs(bullets) do b.part:Destroy() end
 	for _, p in ipairs(pickups) do p.part:Destroy() end
 	enemies, bullets, pickups = {}, {}, {}
 end
 
 -- ---------- выстрел игрока ----------
+aimEvent.OnServerEvent:Connect(function(pl, targetPos)
+	if typeof(targetPos) == "Vector3" and pstate[pl] then pstate[pl].aim = targetPos end
+end)
 fireEvent.OnServerEvent:Connect(function(pl, targetPos)
 	if typeof(targetPos) ~= "Vector3" then return end
 	local st = pstate[pl]
 	if not st then return end
+	st.aim = targetPos
 	local now = os.clock()
 	local cd = (now < st.rapidUntil) and SHOT.rapidCooldown or SHOT.cooldown
 	if now - st.last < cd * 0.85 then return end
@@ -445,12 +515,14 @@ RunService.Heartbeat:Connect(function(dt)
 			else move = Vector3.new(-dir.Z, 0, dir.X) * 0.45 * (e.strafe or 1) end
 			local np = pos + move * e.t.speed * dt
 			np = Vector3.new(math.clamp(np.X, -ARENA, ARENA), 0.3, math.clamp(np.Z, -ARENA, ARENA))
-			e.part.CFrame = spriteCF(np, dir)
+			local mv = flat(np - pos)
+			e.part.CFrame = spriteCF(np, mv.Magnitude > 0.001 and mv.Unit or dir) -- корпус — по ходу
+			if e.tur then e.tur.CFrame = spriteCF(np + Vector3.new(0, 0.06, 0), dir) end -- башня — на игрока
 			if e.t.keep == 0 and d < 4 then
 				target.hum:TakeDamage(e.dmg)
 				boomFx(np, 5)
 				table.remove(enemies, i)
-				e.part:Destroy()
+				removeParts(e)
 			elseif e.boss then
 				e.fireT = e.fireT - dt
 				if e.fireT <= 0 then
@@ -514,6 +586,17 @@ RunService.Heartbeat:Connect(function(dt)
 		if hit or b.life <= 0 or math.abs(np.X) > ARENA + 10 or math.abs(np.Z) > ARENA + 10 then
 			b.part:Destroy()
 			table.remove(bullets, i)
+		end
+	end
+	-- башни игроков: за прицелом мыши/пальца
+	for pl, st in pairs(pstate) do
+		local ch = pl.Character
+		local root = ch and ch:FindFirstChild("HumanoidRootPart")
+		if st.tur and root then
+			local base = root.Position - Vector3.new(0, (st.below or 2.6) - 0.06, 0)
+			local d = st.aim and flat(st.aim - root.Position) or Vector3.zero
+			if d.Magnitude < 0.5 then d = flat(root.CFrame.LookVector) end
+			st.tur.CFrame = spriteCF(base, d.Unit)
 		end
 	end
 	-- ящики: подбор наездом

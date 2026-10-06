@@ -3314,7 +3314,9 @@ function drawTank(t, opts, c){
   c.save();
   c.translate(t.x, t.y);
   c.globalAlpha = baseA;
+  const layer = opts.layer; // выгрузка слоями (для Roblox): 'hull' — только корпус, 'turret' — только башня
 
+  if(layer !== 'turret'){
   // drop shadow
   c.fillStyle = 'rgba(0,0,0,0.28)';
   c.beginPath(); c.ellipse(4*s, 6*s, 27*s, 23*s, 0, 0, Math.PI*2); c.fill();
@@ -3577,8 +3579,10 @@ function drawTank(t, opts, c){
     }
   }
   c.restore();
+  }
 
   // turret
+  if(layer !== 'hull'){
   c.save();
   c.rotate(t.turret);
   // откат ствола при выстреле
@@ -3731,9 +3735,10 @@ function drawTank(t, opts, c){
     }
   }
   c.restore();
+  }
 
   // блёстки (золотой)
-  if(fx.sparkle && !REDUCED){
+  if(fx.sparkle && !REDUCED && layer !== 'turret'){
     c.strokeStyle = '#fff'; c.lineWidth = 1.5*s; c.lineCap = 'round';
     [[-10,-9],[9,-12],[15,7],[-14,11],[2,14],[13,-2]].forEach(([px,py], i)=>{
       const a = Math.max(0, Math.sin(state.time*3 + i*1.7));

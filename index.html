@@ -1504,9 +1504,10 @@ async function shareScene(){
     if(!blob) return;
     const name = story.bossDef ? story.bossDef.name : 'ИМПЕРИЯ ЖЕСТЯНОК';
     const text = story.finale
-      ? 'Я прошёл все 100 волн в «Жестянках»! Попробуй повтори: '
-      : 'Я разнёс генерала «' + name + '» в «Жестянках»! Заводи свой танк: ';
-    const url = 'https://alexbadnik-dev.github.io/steel-monsters/';
+      ? 'Я прошёл все 100 волн в «Жестянках»! Попробуй повтори' + (PLATFORM === 'web' ? ': ' : '!')
+      : 'Я разнёс генерала «' + name + '» в «Жестянках»! Заводи свой танк' + (PLATFORM === 'web' ? ': ' : '!');
+    // на площадках (Яндекс, VK) ссылки на сторонние сайты запрещены правилами — только текст
+    const url = PLATFORM === 'web' ? 'https://alexbadnik-dev.github.io/steel-monsters/' : '';
     const file = new File([blob], 'zhestyanki.png', { type: 'image/png' });
     if(navigator.canShare && navigator.canShare({ files: [file] })){
       await navigator.share({ files: [file], text: text + url, title: 'Жестянки' });

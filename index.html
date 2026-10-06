@@ -393,9 +393,12 @@ const PLATFORM = (() => {
     const q = new URLSearchParams(location.search).get('platform');
     if(q === 'yandex' || /yandex|games\.s3\./.test(location.hostname)) return 'yandex';
     if(q === 'vk' || /vk-apps|vkplay|vk\.com/.test(location.hostname)) return 'vk';
+    if(q === 'app') return 'app'; // APK: наш же сайт в обёртке приложения, но имя — как в сторе
   }catch(e){}
   return 'web';
 })();
+// свой сайт (в том числе внутри APK): можно кэшировать офлайн и давать ссылку в шеринге
+const OWN_SITE = PLATFORM === 'web' || PLATFORM === 'app';
 // язык игры: на площадках определяется автоматически из SDK (п.2.14), по умолчанию русский
 let GAME_LANG = 'ru';
 // разметка геймплея для платформы (п.1.19.3): start — игрок играет, stop — меню/пауза/реклама
@@ -1733,10 +1736,10 @@ async function shareScene(){
     if(!blob) return;
     const name = story.bossDef ? story.bossDef.name : 'ИМПЕРИЯ ЖЕСТЯНОК';
     const text = story.finale
-      ? 'Я прошёл все 100 волн в «Жестянках»! Попробуй повтори' + (PLATFORM === 'web' ? ': ' : '!')
-      : 'Я разнёс генерала «' + name + '» в «Жестянках»! Заводи свой танк' + (PLATFORM === 'web' ? ': ' : '!');
+      ? 'Я прошёл все 100 волн в «Жестянках»! Попробуй повтори' + (OWN_SITE ? ': ' : '!')
+      : 'Я разнёс генерала «' + name + '» в «Жестянках»! Заводи свой танк' + (OWN_SITE ? ': ' : '!');
     // на площадках (Яндекс, VK) ссылки на сторонние сайты запрещены правилами — только текст
-    const url = PLATFORM === 'web' ? 'https://alexbadnik-dev.github.io/steel-monsters/' : '';
+    const url = OWN_SITE ? 'https://alexbadnik-dev.github.io/steel-monsters/' : '';
     const file = new File([blob], 'zhestyanki.png', { type: 'image/png' });
     if(navigator.canShare && navigator.canShare({ files: [file] })){
       await navigator.share({ files: [file], text: text + url, title: 'Жестянки' });
@@ -6324,7 +6327,7 @@ if(window.claude?.hot?.ready){ window.claude.hot.ready(boot); } else { boot(wind
 </script>
 
 <script>
-if (PLATFORM === 'web' && 'serviceWorker' in navigator) { // в контейнерах площадок SW не нужен
+if (OWN_SITE && 'serviceWorker' in navigator) { // в контейнерах площадок SW не нужен
   window.addEventListener('load', function(){
     navigator.serviceWorker.register('./sw.js').then(function(reg){
       // проверяем обновления при каждом возвращении в приложение

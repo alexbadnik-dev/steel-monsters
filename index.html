@@ -4909,14 +4909,15 @@ function render(){
         ctx.shadowColor = '#7fc8ff'; ctx.shadowBlur = 14;
         for(let i=0;i<4;i++){
           if(rnd(seed*5 + i) < 0.3) continue; // часть разрядов гаснет — живое мерцание
-          const a = pts[Math.floor(rnd(seed*3 + i*11)*pts.length)];
-          const b2 = pts[Math.floor(rnd(seed*7 + i*13)*pts.length)];
-          if(a === b2) continue;
+          // дуга ползёт ВДОЛЬ брони: только между соседними точками контура
+          // (сквозь корпус сверху вниз читалась как молния с неба)
+          const ia = Math.floor(rnd(seed*3 + i*11)*pts.length);
+          const a = pts[ia], b2 = pts[(ia + 1 + Math.floor(rnd(seed*7 + i*13)*2)) % pts.length];
           const path = [[bx + a[0], by + a[1]]];
-          for(let k=1;k<6;k++){ // ломаная с поперечным дрожанием
+          for(let k=1;k<6;k++){ // ломаная с небольшим дрожанием, прижата к броне
             const q = k/6;
-            path.push([bx + a[0] + (b2[0]-a[0])*q + (rnd(seed + i*31 + k) - 0.5)*18,
-                       by + a[1] + (b2[1]-a[1])*q + (rnd(seed + i*37 + k + 5) - 0.5)*18]);
+            path.push([bx + a[0] + (b2[0]-a[0])*q + (rnd(seed + i*31 + k) - 0.5)*9,
+                       by + a[1] + (b2[1]-a[1])*q + (rnd(seed + i*37 + k + 5) - 0.5)*9]);
           }
           path.push([bx + b2[0], by + b2[1]]);
           for(const [w, col] of [[5, 'rgba(110,180,255,0.55)'], [1.8, '#f2f9ff']]){ // синий ореол + белое ядро

@@ -3006,12 +3006,15 @@ function drawBarrel(c, x, y, fuse, time){
   c.fillStyle = 'rgba(255,255,255,0.28)';                   // блик
   c.fillRect(-6.4, -6, 1.8, 11);
   if(fuse){                                                 // фитиль горит!
-    c.globalAlpha = Math.sin(time*30) > 0 ? 0.95 : 0.25;
+    const on = Math.sin(time*30) > 0;
+    c.strokeStyle = '#2b1410'; c.lineWidth = 1.2;           // хвостик фитиля из пробки
+    c.beginPath(); c.moveTo(3.4, -9.4); c.lineTo(4.2, -12); c.stroke();
+    c.globalAlpha = on ? 0.9 : 0.35;                        // мигает только сияние
     c.fillStyle = '#ffd84d';
-    c.beginPath(); c.arc(3.4, -13, 2.6, 0, Math.PI*2); c.fill();
-    c.fillStyle = '#ff7a2f';
-    c.beginPath(); c.arc(3.4, -12.4, 1.3, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(4.2, -13, on ? 3.4 : 2.6, 0, Math.PI*2); c.fill();
     c.globalAlpha = 1;
+    c.fillStyle = on ? '#fff3b0' : '#ff8a2f';               // уголёк горит всегда
+    c.beginPath(); c.arc(4.2, -13, 1.5, 0, Math.PI*2); c.fill();
   }
   c.restore();
 }

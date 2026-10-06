@@ -96,6 +96,14 @@ local BIOMES = {
 }
 -- ===============================================
 
+-- точка появления из шаблона Baseplate (белая площадка со звездой): оставляем, но делаем невидимой
+for _, d in ipairs(workspace:GetDescendants()) do
+	if d:IsA("SpawnLocation") then
+		d.Transparency = 1
+		for _, x in ipairs(d:GetChildren()) do if x:IsA("Decal") then x:Destroy() end end
+	end
+end
+
 local enemies, bullets, pickups, props = {}, {}, {}, {}
 local wave = 1
 local bossesBeaten = 0
@@ -178,7 +186,9 @@ local function onCharacter(pl, ch)
 	spr.Name = "TankSprite"
 	spr.Anchored = false
 	spr.Massless = true
-	spr.CFrame = root.CFrame * CFrame.new(0, -root.Position.Y + 0.35, 0) * CFrame.Angles(0, math.rad(SPRITE_YAW), 0)
+	-- картинка висит у «ног» танка (а не на уровне земли) — видна поверх любой площадки
+	local below = hum.HipHeight + root.Size.Y / 2 - 0.4
+	spr.CFrame = root.CFrame * CFrame.new(0, -below, 0) * CFrame.Angles(0, math.rad(SPRITE_YAW), 0)
 	local w = Instance.new("WeldConstraint")
 	w.Part0 = root; w.Part1 = spr; w.Parent = spr
 	spr.Parent = ch

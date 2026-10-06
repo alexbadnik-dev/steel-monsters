@@ -246,7 +246,19 @@ local function onCharacter(pl, ch)
 	if st then
 		if st.tur then st.tur:Destroy() end
 		st.tur, st.below = tur, below
-		if tur then tur.Parent = workspace end -- башня отдельно: крутится за прицелом
+		if tur then
+			-- башня приварена к танку (Weld) и едет с ним без отставания; сервер лишь поворачивает её
+			tur.Anchored = false
+			tur.Massless = true
+			tur.CFrame = spr.CFrame * CFrame.new(0, 0.06, 0)
+			local tw = Instance.new("Weld")
+			tw.Part0 = root
+			tw.Part1 = tur
+			tw.C0 = root.CFrame:ToObjectSpace(tur.CFrame)
+			tw.Parent = tur
+			tur.Parent = ch
+			st.turWeld = tw
+		end
 		hum.Died:Connect(function() if st.tur == tur and tur then tur:Destroy(); st.tur = nil end end)
 	end
 end
@@ -592,11 +604,14 @@ RunService.Heartbeat:Connect(function(dt)
 	for pl, st in pairs(pstate) do
 		local ch = pl.Character
 		local root = ch and ch:FindFirstChild("HumanoidRootPart")
-		if st.tur and root then
-			local base = root.Position - Vector3.new(0, (st.below or 2.6) - 0.06, 0)
+		if st.tur and st.turWeld and root then
 			local d = st.aim and flat(st.aim - root.Position) or Vector3.zero
 			if d.Magnitude < 0.5 then d = flat(root.CFrame.LookVector) end
-			st.tur.CFrame = spriteCF(base, d.Unit)
+			-- нужный поворот в мире → в координаты танка; сдвиг (у «ног») не трогаем
+			local want = spriteCF(root.Position, d.Unit)
+			local rel = root.CFrame:ToObjectSpace(want)
+			local pos = st.turWeld.C0.Position
+			st.turWeld.C0 = CFrame.new(pos) * (rel - rel.Position)
 		end
 	end
 	-- ящики: подбор наездом

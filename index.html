@@ -1569,6 +1569,7 @@ function spawnEnemy(type, waveN, fromSide){
     fireMin: T.fire[0]*D.fire*fireMut, fireMax: T.fire[1]*D.fire*fireMut,
     score: Math.round(T.score*D.score*mutScoreMult()),
     hull:0, turret:0, lockA:null,
+    entering: true, inA: [Math.PI/2, Math.PI, -Math.PI/2, 0][side], // куда въезжать: сверху вниз, справа налево...
     fireT: rand(T.fire[0]*D.fire, T.fire[1]*D.fire),
     keep: (type === 'sniper' || type === 'mortar') ? rand(390,480) : rand(170,280),
     strafe: Math.random()<.5?1:-1,
@@ -2554,6 +2555,15 @@ function update(dt){
   let anyDead = false;
   if(!frozen) for(const e of enemies){
     const T = ETYPES[e.type];
+    // въезд из-за края своим ходом (раньше их сразу ставило на кромку — «выпрыгивали»)
+    if(e.entering){
+      const v = Math.max(e.sp, 150);
+      e.x += Math.cos(e.inA)*v*dt; e.y += Math.sin(e.inA)*v*dt;
+      e.hull = e.inA; e.turret = e.inA;
+      e.trackPhase = (e.trackPhase || 0) + v*dt*0.22;
+      if(e.x > e.r && e.x < W - e.r && e.y > e.r && e.y < H - e.r) e.entering = false;
+      continue;
+    }
     const a = angTo(e.x,e.y,player.x,player.y);
     const d = dist(e.x,e.y,player.x,player.y);
 

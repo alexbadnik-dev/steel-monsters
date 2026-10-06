@@ -1003,7 +1003,7 @@ function noiseBurst(dur, vol, ftype, freq, slide){
   s.start(); s.stop(ac.currentTime + dur + 0.02);
 }
 
-const sfx = {
+const sfxStd = {
   // пушка игрока: у каждого класса свой характер
   cannon(k){
     if(k === 'heavy'){        // тяжёлое орудие: глухой мощный удар
@@ -1089,6 +1089,162 @@ const sfx = {
     setTimeout(()=> beep(98,.7,'triangle',.07,-30), 690);
   }
 };
+
+// ---------- набор «8-БИТ»: звуки в духе 8-битных приставок (свои, не из чужих игр) ----------
+// импульсная волна узкой скважности (12.5% / 25%) — фирменный «писк» приставки
+function nesWave(duty){
+  const ac = AC; ac._nesW = ac._nesW || {};
+  if(!ac._nesW[duty]){
+    const n = 32, re = new Float32Array(n), im = new Float32Array(n);
+    for(let k = 1; k < n; k++) im[k] = (2/(k*Math.PI)) * Math.sin(k*Math.PI*duty);
+    ac._nesW[duty] = ac.createPeriodicWave(re, im);
+  }
+  return ac._nesW[duty];
+}
+// шум как у приставки: сдвиговый регистр; «длинный» — шипение/взрыв, «короткий» (93 шага) — металлический звон
+function nesNoiseBuf(metal){
+  const ac = AC; ac._nesN = ac._nesN || {};
+  const key = metal ? 'm' : 'l';
+  if(!ac._nesN[key]){
+    const len = metal ? 93*64 : 32767;
+    const b = ac.createBuffer(1, len, ac.sampleRate), d = b.getChannelData(0);
+    let r = 1;
+    for(let i = 0; i < len; i++){
+      const fb = (r & 1) ^ ((r >> (metal ? 6 : 1)) & 1);
+      r = (r >> 1) | (fb << 14);
+      d[i] = (r & 1) ? 0.9 : -0.9;
+    }
+    ac._nesN[key] = b;
+  }
+  return ac._nesN[key];
+}
+// шаги по 1/60 с: высота и громкость меняются ступеньками (16 уровней громкости), как на приставке
+function nesSteps(param, t0, dur, v0, mul, conv){
+  const steps = Math.max(1, Math.round(dur*60));
+  for(let i = 0; i < steps; i++){
+    const k = i/steps;
+    param.setValueAtTime(conv(mul ? v0*Math.pow(mul, k) : v0), t0 + i/60);
+  }
+}
+function nesEnv(g, t0, dur, vol, sustain){
+  const steps = Math.max(1, Math.round(dur*60));
+  for(let i = 0; i < steps; i++){
+    const k = i/steps, lv = Math.round(15*(sustain ? 1 - k*k : 1 - k));
+    g.gain.setValueAtTime(vol*lv/15, t0 + i/60);
+  }
+  g.gain.setValueAtTime(0, t0 + dur);
+}
+// o: { at — задержка, с; duty — 0.125/0.25/0.5; tri — треугольник (бас); slide — множитель частоты к концу }
+function nesPulse(f0, dur, vol, o){
+  const ac = AC; if(!ac || !soundOn) return;
+  o = o || {};
+  const t0 = ac.currentTime + (o.at || 0), osc = ac.createOscillator(), g = ac.createGain();
+  if(o.tri) osc.type = 'triangle'; else osc.setPeriodicWave(nesWave(o.duty || 0.25));
+  nesSteps(osc.frequency, t0, dur, f0, o.slide, f => Math.max(20, f));
+  nesEnv(g, t0, dur, vol, o.sustain);
+  osc.connect(g); g.connect(ac.destination);
+  osc.start(t0); osc.stop(t0 + dur + 0.03);
+}
+// o: { at; hz — частота шагов регистра (выше — шипение, ниже — рокот); slide; metal }
+function nesNoise(dur, vol, o){
+  const ac = AC; if(!ac || !soundOn) return;
+  o = o || {};
+  const t0 = ac.currentTime + (o.at || 0), s = ac.createBufferSource(), g = ac.createGain();
+  s.buffer = nesNoiseBuf(!!o.metal); s.loop = true;
+  nesSteps(s.playbackRate, t0, dur, o.hz || 9000, o.slide, hz => Math.max(0.02, hz/ac.sampleRate));
+  nesEnv(g, t0, dur, vol, o.sustain);
+  s.connect(g); g.connect(ac.destination);
+  s.start(t0); s.stop(t0 + dur + 0.03);
+}
+const sfx8bit = {
+  cannon(k){
+    if(k === 'heavy'){        // тяжёлый: рокочущий «бу-у-ух»
+      nesNoise(.3, .1, { hz: 9000, slide: .12 });
+      nesPulse(110, .2, .11, { tri: true, slide: .5 });
+    } else if(k === 'fast'){  // автопушка: «пиу»
+      nesPulse(1200, .05, .06, { duty: .125, slide: .4 });
+      nesNoise(.04, .06, { hz: 30000, slide: .3 });
+    } else {                  // универсал: «пыщ» с писком
+      nesNoise(.18, .14, { hz: 18000, slide: .09 });
+      nesPulse(660, .08, .07, { slide: .25 });
+    }
+  },
+  eshot(type){
+    if(type === 'sniper'){
+      nesPulse(1760, .1, .07, { duty: .125, slide: .2 });
+      nesNoise(.05, .05, { hz: 20000, metal: true });
+    } else if(type === 'boss'){
+      nesNoise(.2, .04, { hz: 7000, slide: .15 });
+      nesPulse(98, .2, .045, { tri: true, slide: .6 });
+    } else if(type === 'mortar'){
+      nesPulse(80, .18, .12, { tri: true, slide: 2 });
+      nesNoise(.08, .04, { hz: 4000 });
+    } else {
+      nesNoise(.12, .07, { hz: type === 'heavy' ? 8000 : 12000, slide: .15 });
+      nesPulse(type === 'scout' ? 520 : 330, .06, .035, { slide: .4 });
+    }
+  },
+  petShot(){ nesNoise(.04, .05, { hz: 24000, slide: .5 }); },
+  dash(){ nesNoise(.25, .07, { hz: 3000, slide: 3 }); },
+  beamHum(){
+    nesPulse(110, .1, .03, { duty: .125 });
+    nesNoise(.06, .015, { hz: 14000, metal: true });
+  },
+  superBoom(){
+    nesNoise(.9, .13, { hz: 9000, slide: .04, sustain: true });
+    nesPulse(55, .7, .12, { tri: true, slide: .5 });
+    nesPulse(440, .45, .05, { slide: .2 });
+  },
+  hit(){ // попадание по броне: металлический «тынц»
+    nesNoise(.06, .08, { hz: 26000, slide: .5, metal: true });
+    nesPulse(1568, .04, .035, { duty: .125, slide: .7 });
+  },
+  boom(){
+    nesNoise(.55, .075, { hz: 6000, slide: .06, sustain: true });
+    nesPulse(70, .4, .07, { tri: true, slide: .5 });
+  },
+  pickup(){ // бип-бип-бип вверх
+    [1046, 1318, 1568, 2093].forEach((f, i) => nesPulse(f, .05, .06, { duty: .125, at: i*.04 }));
+  },
+  buy(){
+    [[784,0],[988,.07],[1175,.14]].forEach(([f, a]) => nesPulse(f, .07, .05, { at: a }));
+    nesPulse(1568, .28, .05, { at: .22, sustain: true });
+    nesPulse(392, .4, .1, { tri: true, at: .22 });
+  },
+  waveClear(){ // короткая фанфара «волна чиста»
+    [[523,0],[659,.08],[784,.16]].forEach(([f, a]) => nesPulse(f, .07, .045, { at: a }));
+    nesPulse(1046, .22, .05, { at: .25, sustain: true });
+    nesPulse(262, .45, .1, { tri: true });
+  },
+  decade(){ // новый биом: «секретный» перелив
+    [988, 1245, 1480, 1976, 1480, 1976].forEach((f, i) => nesPulse(f, .06, .045, { duty: .125, at: i*.055 }));
+  },
+  shieldPop(){ nesPulse(1760, .12, .06, { slide: .3 }); },
+  enrage(){ [0, .12, .24, .36].forEach((a, i) => nesPulse(i % 2 ? 147 : 196, .11, .08, { duty: .5, at: a })); },
+  win(){ // босс повержен
+    [[523,0],[659,.1],[784,.2],[1046,.3],[880,.45],[1046,.55],[1175,.65]]
+      .forEach(([f, a]) => nesPulse(f, .09, .05, { at: a }));
+    nesPulse(1318, .45, .055, { at: .78, sustain: true });
+    [[262,0],[349,.3],[392,.55],[523,.78]].forEach(([f, a]) => nesPulse(f, .3, .11, { tri: true, at: a }));
+  },
+  lose(){ // поражение: спуск и низкий «бум»
+    [[587,0],[554,.18],[523,.36],[494,.54]].forEach(([f, a]) => nesPulse(f, .16, .05, { duty: .5, at: a }));
+    nesPulse(98, .7, .14, { tri: true, at: .72, slide: .7 });
+    nesNoise(.4, .06, { hz: 3000, at: .72 });
+  }
+};
+// активный набор звуков: «обычный» или «8-БИТ» (кнопка в меню музыки, сохраняется)
+const sfx = {};
+let sfxSet = 'std';
+try{ if(localStorage.getItem('sm_sfx') === '8bit') sfxSet = '8bit'; }catch(e){}
+function applySfxSet(id){
+  sfxSet = id === '8bit' ? '8bit' : 'std';
+  for(const k of Object.keys(sfx)) delete sfx[k];
+  Object.assign(sfx, sfxStd, sfxSet === '8bit' ? sfx8bit : {});
+  try{ localStorage.setItem('sm_sfx', sfxSet); }catch(e){}
+}
+applySfxSet(sfxSet);
+
 function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
 
 // ---------- музыка: оригинальный 8-битный чиптюн (секвенсор на Web Audio) ----------
@@ -1097,7 +1253,7 @@ const music = (() => {
   try{
     on = localStorage.getItem('sm_music') !== '0';
     const t = localStorage.getItem('sm_track');
-    if(['dance','rock','chill','dendy'].includes(t)) trackId = t;
+    if(['dance','rock','chill'].includes(t)) trackId = t; // трек «ДЕНДИ» убран (не зашёл) — сохранённый выбор откатится на ДАНС
   }catch(e){}
   let timer = null, step = 0, nextTime = 0, noiseBuf = null;
   const f = m => 440*Math.pow(2, (m-69)/12);
@@ -1164,35 +1320,6 @@ const music = (() => {
       ],
       kick: i => i % 8 === 0, snare: () => false, hat: i => i % 4 === 2
     },
-    // «Денди»: честный NES — два квадратных голоса, треугольный бас, 160 BPM.
-    // Мелодия оригинальная, скопированы только приёмы эпохи: скачки́ октав,
-    // бодрые пробежки и ответы второго голоса на слабые доли.
-    dendy: {
-      // лид на октаву выше ДАНСа, отрывистые 16-е (leadLen), темп заметно бодрее —
-      // «чирикающий» верх NES, чтобы не путался с данс-треком
-      // 168 -> 152: лид 16-ми «тараторил» — даём дыхание, рисунок прежний
-      name: 'ДЕНДИ', bpm: 152, leadType: 'square', leadVol: 0.024, leadLen: 0.95,
-      bassVol: 0.05, harmVol: 0.016,
-      lead: [
-        84,88,91,88, 84,0,79,0, 81,83,84,86, 88,0,84,0,
-        89,88,86,88, 89,0,86,0, 91,89,88,86, 88,0,0,0,
-        88,91,96,91, 93,91,88,84, 86,88,89,86, 83,0,79,0,
-        84,86,88,89, 91,0,88,0, 86,0,83,0, 84,0,0,0
-      ],
-      harm: [
-        0,0,64,0, 0,0,67,0, 0,0,64,0, 0,0,67,0,
-        0,0,65,0, 0,0,69,0, 0,0,67,0, 0,0,71,0,
-        0,0,67,0, 0,0,64,0, 0,0,65,0, 0,0,62,0,
-        0,0,64,0, 0,0,67,0, 0,0,62,0, 0,0,64,0
-      ],
-      bass: [
-        36,48,36,48, 36,48,36,48,
-        41,53,41,53, 43,55,43,55,
-        36,48,36,48, 41,53,43,55,
-        36,48,43,55, 36,43,36,36
-      ],
-      kick: i => i % 8 === 0 || i % 16 === 6, snare: i => i % 8 === 4, hat: i => i % 2 === 0
-    }
   };
   function cur(){ return TRACKS[trackId] || TRACKS.dance; }
   function osc(type, freq, t, dur, vol){
@@ -5811,7 +5938,7 @@ function renderDiffRow(){
 function renderMusicRow(){
   const row = $('musicRow');
   row.innerHTML = '';
-  const items = [['dance','ДАНС','note'],['rock','РОК','guitar'],['chill','ЧИЛЛ','moon'],['dendy','ДЕНДИ','pad'],[null,'ВЫКЛ','mute']];
+  const items = [['dance','ДАНС','note'],['rock','РОК','guitar'],['chill','ЧИЛЛ','moon'],[null,'ВЫКЛ','mute']];
   for(const [id, label, icon] of items){
     const b = document.createElement('button');
     const active = id === null ? !music.on : (music.on && music.track === id);
@@ -5827,6 +5954,19 @@ function renderMusicRow(){
     });
     row.append(b);
   }
+  // набор звуков «8-БИТ»: выстрелы, взрывы и мелодии в духе старых приставок
+  const xb = document.createElement('button');
+  const on8 = sfxSet === '8bit';
+  xb.className = 'classbtn' + (on8 ? ' sel' : '');
+  xb.style.flexDirection = 'row';
+  xb.append(pixIcon('pad', on8 ? '#6fe58f' : '#9fb3c4', 13), document.createTextNode(' 8-БИТ ЗВУКИ'));
+  xb.addEventListener('click', ()=>{
+    audio();
+    applySfxSet(on8 ? 'std' : '8bit');
+    sfx.pickup(); // сразу слышно, какой набор включён
+    renderMusicRow();
+  });
+  row.append(xb);
   // озвучка зловещим голосом (если браузер умеет синтез речи)
   if(voice.ok){
     const vb = document.createElement('button');

@@ -369,7 +369,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v99';
+const GAME_VERSION = 'v100';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -1615,9 +1615,11 @@ function startWave(n){
   if(waveClearT){ clearTimeout(waveClearT); waveClearT = null; }
   // новая декада — новое поле: свежий декор (и починка разрушенного)
   if(n % 10 === 1) makeScenery();
-  // взрывные бочки: 2-3 на волну, не рядом с игроком
-  barrels = [];
-  const bnum = 2 + Math.floor(rand(0, 2));
+  // взрывные бочки: уцелевшие с прошлой волны остаются на месте, новые лишь
+  // доставляются до 2-3 штук (максимум 5 на поле); на новом поле (декаде) — с нуля
+  if(n % 10 === 1) barrels = [];
+  barrels = barrels.filter(br => br.fuseT == null); // уже горящие — не тащим в новую волну
+  const bnum = Math.max(0, Math.min(5 - barrels.length, 2 + Math.floor(rand(0, 2)) - barrels.length));
   for(let i=0;i<bnum;i++){
     let bx3, by3, tr3 = 0;
     do { bx3 = rand(60, W-60); by3 = rand(60, H-60); tr3++; }
@@ -1641,7 +1643,7 @@ function startWave(n){
   if(isBossWave(n)){
     $('wavetext').textContent = (surv ? ('Выживание · волна ' + n + ' · БОСС') : ('Волна ' + n + ' / ' + TOTAL_WAVES + ' · БОСС')) + dTag;
     waveBanner = { text: n === TOTAL_WAVES ? 'ФИНАЛЬНЫЙ БОСС!'
-      : ('ВОЛНА ' + n + ' · БОСС ' + (n > TOTAL_WAVES ? '№' : '') + bossNumOf(n) + '!'), t: 2.2 };
+      : ('ВОЛНА ' + n + ' · БОСС ' + (n > TOTAL_WAVES ? '№' : '') + bossNumOf(n)), t: 2.2 }; // без «!» — сливался с цифрой («1!» читалось как «11»)
     spawnBoss();
   } else {
     $('wavetext').textContent = (surv ? ('Выживание · волна ' + n) : ('Волна ' + n + ' / ' + TOTAL_WAVES)) + dTag;
@@ -3474,24 +3476,48 @@ function drawTankSide(t, opts){
   const s = o.scale || 1, dir = t.dir || 1;
   const hull = o.hullColor || '#4caf50', dark = o.darkColor || '#2e6b32';
   const c = o.ctx || ctx; // свой холст — для миниатюр фотоальбома
+  const now = performance.now() / 1000;
+  const hover = fx.body === 'hover', low = fx.body === 'racer' || fx.body === 'stealth';
   c.save();
   c.translate(t.x, t.y);
   if(t.tilt) c.rotate(t.tilt);
   c.scale(dir*s, s);
+  if(hover) c.translate(0, -6 + Math.sin(now*3)*1.5); // парит над землёй
   const ga = c.globalAlpha;
   if(fx.alpha != null) c.globalAlpha = ga * fx.alpha;
   if(fx.glow){ c.shadowColor = fx.glow; c.shadowBlur = 16; }
-  // корпус со скошенным лбом
+  // корпус со скошенным лбом (у «стелс»/гонщика — ниже и острее)
   c.fillStyle = hull;
   c.beginPath();
-  c.moveTo(-40, 7); c.lineTo(-35, -8); c.lineTo(25, -8); c.lineTo(42, 1); c.lineTo(42, 7);
+  if(low){ c.moveTo(-41, 7); c.lineTo(-37, -5); c.lineTo(18, -6); c.lineTo(44, 3); c.lineTo(44, 7); }
+  else { c.moveTo(-40, 7); c.lineTo(-35, -8); c.lineTo(25, -8); c.lineTo(42, 1); c.lineTo(42, 7); }
   c.closePath(); c.fill();
   c.shadowBlur = 0;
   // блик по верхней кромке корпуса
   c.fillStyle = 'rgba(255,255,255,0.14)';
   c.beginPath(); c.moveTo(-35,-8); c.lineTo(25,-8); c.lineTo(23,-5); c.lineTo(-33,-5); c.closePath(); c.fill();
-  // пятна камуфляжа, если у скина есть узор
-  if(fx.pattern){
+  if(fx.body === 'stealth'){ // рубленые бронеплиты
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1.2;
+    c.beginPath(); c.moveTo(-20, -5); c.lineTo(-14, 6); c.moveTo(4, -5); c.lineTo(10, 6); c.moveTo(24, -3); c.lineTo(30, 6); c.stroke();
+  }
+  // узор корпуса: полосы шершня, трещины лавы, звезда или камуфляжные пятна
+  if(fx.pattern === 'stripes'){
+    c.save(); c.beginPath(); c.rect(-40, -8, 82, 15); c.clip();
+    c.fillStyle = dark;
+    for(let x=-44; x<44; x+=12){ c.beginPath(); c.moveTo(x, 7); c.lineTo(x + 6, 7); c.lineTo(x + 14, -8); c.lineTo(x + 8, -8); c.closePath(); c.fill(); }
+    c.restore();
+  } else if(fx.pattern === 'cracks'){
+    c.save(); c.shadowColor = '#ff6a3a'; c.shadowBlur = 8;
+    c.strokeStyle = '#ff8a3a'; c.globalAlpha = c.globalAlpha * (0.75 + 0.25*Math.sin(now*4)); c.lineWidth = 1.8;
+    c.beginPath(); c.moveTo(-30, -6); c.lineTo(-24, 0); c.lineTo(-27, 5);
+    c.moveTo(-6, -7); c.lineTo(-1, -1); c.lineTo(5, 0); c.lineTo(8, 6);
+    c.moveTo(20, -6); c.lineTo(26, 1); c.stroke();
+    c.restore();
+  } else if(fx.pattern === 'star'){
+    c.fillStyle = '#ffd84d'; c.beginPath();
+    for(let i=0;i<10;i++){ const r = i % 2 ? 2.6 : 6, a = -Math.PI/2 + i*Math.PI/5; c.lineTo(-4 + Math.cos(a)*r, 0 + Math.sin(a)*r); }
+    c.closePath(); c.fill();
+  } else if(fx.pattern){
     const ga2 = c.globalAlpha;
     c.fillStyle = dark; c.globalAlpha = ga2 * 0.55;
     c.beginPath(); c.ellipse(-16, -1, 9, 4, 0.3, 0, Math.PI*2); c.fill();
@@ -3499,52 +3525,88 @@ function drawTankSide(t, opts){
     c.beginPath(); c.ellipse(28, 0, 6, 3, 0.5, 0, Math.PI*2); c.fill();
     c.globalAlpha = ga2;
   }
-  // ствол с отдачей и наклоном (у подбитых — опущен)
-  c.save();
-  c.translate(9 - (t.recoil || 0)*5, -15);
-  if(t.barrelA) c.rotate(t.barrelA);
-  c.fillStyle = dark;
-  c.fillRect(0, -2, 36, 4);
-  c.fillRect(31, -3.2, 5, 6.4); // дульный тормоз
-  c.restore();
+  // геометрия башни по типу: обычная / коробка-крепость / широкая / рубка САУ у кормы
+  const tur = fx.turret === 'box'  ? { x0:-24, x1:18, top:-30, slope:2, bx:12, by:-20 }
+            : fx.turret === 'wide' ? { x0:-30, x1:24, top:-17, slope:5, bx:15, by:-13 }
+            : fx.turret === 'sau'  ? { x0:-38, x1:-4, top:-25, slope:3, bx:-6, by:-18 }
+            :                        { x0:-21, x1:17, top:-21, slope:6, bx:9,  by:-15 };
+  // ствол(ы) с отдачей и наклоном (у подбитых — опущен)
+  if(fx.barrel !== 'none'){
+    const heavy = fx.barrel === 'heavy', len = fx.barrel === 'long' || fx.turret === 'sau' ? 48 : heavy ? 40 : 36;
+    const th = heavy ? 7 : 4;
+    const offs = fx.barrel === 'triple' ? [-4.5, 0, 4.5] : fx.barrel === 'double' ? [-3, 3] : [0];
+    c.save();
+    c.translate(tur.bx - (t.recoil || 0)*5, tur.by);
+    if(t.barrelA) c.rotate(t.barrelA);
+    c.fillStyle = dark;
+    for(const oy of offs){
+      c.fillRect(0, oy - th/2, len, th);
+      c.fillRect(len - 5, oy - th/2 - 1.2, 5 + (heavy ? 2 : 0), th + 2.4); // дульный тормоз
+    }
+    c.restore();
+  }
   // башня
   c.fillStyle = hull;
   c.beginPath();
-  c.moveTo(-21, -8); c.lineTo(-15, -21); c.lineTo(10, -21); c.lineTo(17, -8);
+  c.moveTo(tur.x0, -8); c.lineTo(tur.x0 + tur.slope, tur.top); c.lineTo(tur.x1 - tur.slope, tur.top); c.lineTo(tur.x1, -8);
   c.closePath(); c.fill();
   c.fillStyle = 'rgba(255,255,255,0.12)';
-  c.beginPath(); c.moveTo(-15,-21); c.lineTo(10,-21); c.lineTo(9,-17.5); c.lineTo(-13,-17.5); c.closePath(); c.fill();
+  c.fillRect(tur.x0 + tur.slope, tur.top, tur.x1 - tur.x0 - tur.slope*2, 3);
   c.fillStyle = dark; // люк
-  c.fillRect(-7, -23, 10, 2.6);
+  c.fillRect((tur.x0 + tur.x1)/2 - 6, tur.top - 2, 10, 2.6);
+  if(fx.turret === 'box'){ // смотровые щели крепости
+    c.fillStyle = 'rgba(0,0,0,0.45)';
+    c.fillRect(tur.x0 + 6, tur.top + 8, 9, 2.5); c.fillRect(tur.x0 + 20, tur.top + 8, 9, 2.5);
+  }
+  if(fx.crown){ // корона императора
+    const cx0 = (tur.x0 + tur.x1)/2 - 9, cy0 = tur.top - 3;
+    c.fillStyle = '#ffd84d';
+    c.beginPath(); c.moveTo(cx0, cy0); c.lineTo(cx0, cy0 - 7); c.lineTo(cx0 + 4.5, cy0 - 3); c.lineTo(cx0 + 9, cy0 - 10);
+    c.lineTo(cx0 + 13.5, cy0 - 3); c.lineTo(cx0 + 18, cy0 - 7); c.lineTo(cx0 + 18, cy0); c.closePath(); c.fill();
+    c.fillStyle = '#e84c3d'; c.beginPath(); c.arc(cx0 + 9, cy0 - 3.5, 1.8, 0, Math.PI*2); c.fill();
+  }
+  if(fx.icicles){ // иней на башне и сосульки по кромке корпуса
+    c.fillStyle = 'rgba(235,248,255,0.9)';
+    c.fillRect(tur.x0 + tur.slope, tur.top - 1, tur.x1 - tur.x0 - tur.slope*2, 2.5);
+    for(let x=-30; x<34; x+=9){ c.beginPath(); c.moveTo(x, 6); c.lineTo(x + 4, 6); c.lineTo(x + 2, 6 + 4 + (x % 3 + 3)); c.closePath(); c.fill(); }
+  }
   // выхлопная труба сзади
   c.fillStyle = dark;
   c.fillRect(-41, -4, 5, 8);
-  // гусеничная лента
-  c.fillStyle = dark;
-  rrectC(c, -42, 3, 85, 19, 9.5); c.fill();
-  // катки со спицами, крутятся по trackPhase
-  const ph = (t.trackPhase || 0) * 0.45;
-  c.fillStyle = '#11141a';
-  for(let i=0;i<5;i++){ c.beginPath(); c.arc(-30 + i*15, 12.5, 6, 0, Math.PI*2); c.fill(); }
-  c.strokeStyle = '#48515f'; c.lineWidth = 1.5;
-  for(let i=0;i<5;i++){
-    const wx = -30 + i*15;
-    c.beginPath(); c.arc(wx, 12.5, 6.2, 0, Math.PI*2); c.stroke();
-    c.beginPath();
-    c.moveTo(wx + Math.cos(ph)*4.4, 12.5 + Math.sin(ph)*4.4);
-    c.lineTo(wx - Math.cos(ph)*4.4, 12.5 - Math.sin(ph)*4.4);
-    c.moveTo(wx + Math.cos(ph + 1.57)*4.4, 12.5 + Math.sin(ph + 1.57)*4.4);
-    c.lineTo(wx - Math.cos(ph + 1.57)*4.4, 12.5 - Math.sin(ph + 1.57)*4.4);
-    c.stroke();
-  }
-  // звенья траков бегут по ленте
-  c.fillStyle = '#2a303a';
-  const tph = ((t.trackPhase || 0) % 8 + 8) % 8;
-  for(let i=0;i<11;i++){
-    const xx = -42 + ((i*8 + tph) % 85);
-    if(xx > 39) continue;
-    c.fillRect(xx, 2.4, 3, 2.8);
-    c.fillRect(xx, 19.8, 3, 2.8);
+  if(hover){
+    // юбка антигравитации вместо гусениц + сияние под днищем
+    c.fillStyle = dark; rrectC(c, -38, 5, 78, 8, 4); c.fill();
+    const hg = c.createRadialGradient(0, 18, 2, 0, 18, 46);
+    hg.addColorStop(0, (fx.glow || '#7ee0d2') + 'aa'); hg.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = hg; c.fillRect(-46, 8, 92, 26);
+  } else {
+    // гусеничная лента
+    c.fillStyle = dark;
+    rrectC(c, -42, 3, 85, 19, 9.5); c.fill();
+    // катки со спицами, крутятся по trackPhase
+    const ph = (t.trackPhase || 0) * 0.45;
+    c.fillStyle = '#11141a';
+    for(let i=0;i<5;i++){ c.beginPath(); c.arc(-30 + i*15, 12.5, 6, 0, Math.PI*2); c.fill(); }
+    c.strokeStyle = '#48515f'; c.lineWidth = 1.5;
+    for(let i=0;i<5;i++){
+      const wx = -30 + i*15;
+      c.beginPath(); c.arc(wx, 12.5, 6.2, 0, Math.PI*2); c.stroke();
+      c.beginPath();
+      c.moveTo(wx + Math.cos(ph)*4.4, 12.5 + Math.sin(ph)*4.4);
+      c.lineTo(wx - Math.cos(ph)*4.4, 12.5 - Math.sin(ph)*4.4);
+      c.moveTo(wx + Math.cos(ph + 1.57)*4.4, 12.5 + Math.sin(ph + 1.57)*4.4);
+      c.lineTo(wx - Math.cos(ph + 1.57)*4.4, 12.5 - Math.sin(ph + 1.57)*4.4);
+      c.stroke();
+    }
+    // звенья траков бегут по ленте
+    c.fillStyle = '#2a303a';
+    const tph = ((t.trackPhase || 0) % 8 + 8) % 8;
+    for(let i=0;i<11;i++){
+      const xx = -42 + ((i*8 + tph) % 85);
+      if(xx > 39) continue;
+      c.fillRect(xx, 2.4, 3, 2.8);
+      c.fillRect(xx, 19.8, 3, 2.8);
+    }
   }
   // фара/глазок спереди
   if(fx.eyeColor){
@@ -3553,7 +3615,16 @@ function drawTankSide(t, opts){
   }
   if(fx.antenna){
     c.strokeStyle = dark; c.lineWidth = 1.5; c.lineCap = 'round';
-    c.beginPath(); c.moveTo(-13, -21); c.lineTo(-19, -34); c.stroke();
+    c.beginPath(); c.moveTo(tur.x0 + 8, tur.top); c.lineTo(tur.x0 + 2, tur.top - 13); c.stroke();
+  }
+  if(fx.sparkle){ // золотые искорки по броне
+    c.fillStyle = '#fff6c8';
+    for(let i=0;i<4;i++){
+      const a = 0.5 + 0.5*Math.sin(now*4 + i*1.7); if(a < 0.55) continue;
+      const sx = -28 + i*19, sy = -4 - (i % 2)*10, r = 3*a;
+      c.globalAlpha = ga * a;
+      c.fillRect(sx - r, sy - 0.6, r*2, 1.2); c.fillRect(sx - 0.6, sy - r, 1.2, r*2);
+    }
   }
   c.globalAlpha = ga;
   c.restore();
@@ -3717,6 +3788,164 @@ function drawPickup(m, ctx = GCTX){ // второй аргумент — цел�
     icon(0, 0, ICON_COLORS[1]);   // сама иконка
   }
   ctx.restore();
+}
+
+// облик генерала сбоку: все его черты из BOSS_DEFS + особые приметы по имени
+function bossSideFx(bd){
+  const fx = Object.assign({}, bd.fx);
+  if(bd.name === 'МОРОЗ') fx.icicles = true;
+  if(bd.name === 'ИМПЕРАТОР') fx.crown = true;
+  if(bd.name === 'ОХОТНИК') fx.body = 'stealth';
+  return fx;
+}
+// ---------- кино-главы: у каждого биома своё небо, светило и горизонт ----------
+// sky — 4 стопа градиента сверху вниз; sun — светило; horizon — силуэты дальнего плана
+const SCENE_THEMES = [
+  { sky:['#04060b','#0f1219','#2c161b','#5c261c'], sun:'redmoon', horizon:'ruins',     storm:true  }, // СТЕПЬ
+  { sky:['#120c06','#3a2610','#8a5a22','#d9a050'], sun:'sun',     horizon:'dunes',     storm:false }, // ПУСТЫНЯ
+  { sky:['#02060e','#0a1828','#1a3550','#45657f'], sun:'pale',    horizon:'mountains', storm:false, aurora:'#5fe0b0' }, // СНЕГА
+  { sky:['#040806','#0b1612','#17291f','#334434'], sun:'greenmoon', horizon:'deadtrees', storm:false, mist:true }, // БОЛОТО
+  { sky:['#090504','#1e110b','#432214','#86401f'], sun:'rustsun', horizon:'scrap',     storm:true  }, // РЖАВЫЕ ЗЕМЛИ
+  { sky:['#02070a','#081a12','#123422','#285638'], sun:'pale',    horizon:'canopy',    storm:false, mist:true }, // ДЖУНГЛИ
+  { sky:['#060508','#131118','#272026','#463632'], sun:'none',    horizon:'burnt',     storm:false }, // ПЕПЕЛИЩЕ
+  { sky:['#02050e','#081a2c','#163a5a','#3f86ac'], sun:'pale',    horizon:'icecliffs', storm:false, aurora:'#7fc8ff' }, // ЛЕДНИК
+  { sky:['#06030c','#170d2c','#301c56','#66388a'], sun:'twomoons', horizon:'spires',   storm:true  }, // СУМРАК
+  { sky:['#0a0302','#260905','#561608','#c0401a'], sun:'none',    horizon:'volcano',   storm:false }  // ВУЛКАН
+];
+function drawSceneSun(c, kind, t, W, groundY, bh){
+  const glowDisc = (x, y, r, core, rim, haloCol, haloR) => {
+    const h = c.createRadialGradient(x, y, r*0.3, x, y, haloR);
+    h.addColorStop(0, haloCol); h.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = h; c.fillRect(x - haloR, y - haloR, haloR*2, haloR*2);
+    c.fillStyle = rim; c.beginPath(); c.arc(x, y, r, 0, Math.PI*2); c.fill();
+    c.fillStyle = core; c.beginPath(); c.arc(x - r*0.2, y - r*0.2, r*0.82, 0, Math.PI*2); c.fill();
+  };
+  if(kind === 'sun'){ // огромное мутное солнце у горизонта, в мареве
+    glowDisc(W*0.7, groundY - 46, 46, '#ffe6a0', '#f7c467', 'rgba(255,200,110,0.45)', 230);
+    c.fillStyle = 'rgba(255,220,150,0.18)'; // полосы марева поперёк диска
+    for(let i=0;i<3;i++) c.fillRect(W*0.7 - 70, groundY - 60 + i*12 + Math.sin(t*2 + i)*2, 140, 3);
+  } else if(kind === 'rustsun'){
+    glowDisc(W*0.24, groundY - 60, 34, '#ffb27a', '#d9703c', 'rgba(220,110,60,0.35)', 160);
+  } else if(kind === 'pale'){
+    glowDisc(W*0.8, bh + 58, 24, '#eef4fa', '#c8d6e2', 'rgba(200,220,240,0.22)', 110);
+  } else if(kind === 'greenmoon'){
+    glowDisc(W*0.22, bh + 62, 26, '#d7f0b8', '#a8c88a', 'rgba(170,220,130,0.22)', 120);
+  } else if(kind === 'twomoons'){
+    glowDisc(W*0.78, bh + 54, 30, '#f2d8ff', '#c49ae0', 'rgba(200,150,240,0.3)', 140);
+    glowDisc(W*0.64, bh + 92, 13, '#ffd6e8', '#e09ac0', 'rgba(240,150,200,0.25)', 60);
+  } else if(kind === 'redmoon'){ // прежняя кроваво-красная луна
+    const mx = W*0.82, my = bh + 56;
+    glowDisc(mx, my, 30, '#a5402e', '#7e2a20', 'rgba(210,70,50,0.4)', 110);
+    c.fillStyle = '#692017';
+    c.beginPath(); c.arc(mx - 9, my - 4, 6, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(mx + 9, my + 9, 4.5, 0, Math.PI*2); c.fill();
+  }
+}
+function drawSceneAurora(c, col, t, W, bh, groundY){
+  c.save();
+  c.globalCompositeOperation = 'lighter';
+  for(let L=0; L<3; L++){
+    c.strokeStyle = col; c.globalAlpha = 0.09 - L*0.02; c.lineWidth = 26 - L*6;
+    c.beginPath();
+    for(let x=-20; x<=W+20; x+=24){
+      const y = bh + 40 + L*22 + Math.sin(x*0.006 + t*0.5 + L)*24 + Math.sin(x*0.017 - t*0.3)*9;
+      x < 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+    }
+    c.stroke();
+  }
+  c.restore();
+}
+// силуэты горизонта: far — дальний план светлее, near — ближний темнее; base — линия земли
+function drawSceneHorizon(c, kind, t, W, groundY, rnd){
+  const far = 'rgba(20,24,32,0.75)', near = '#0c0f15';
+  const layer = (col, base, fn) => { c.fillStyle = col; c.beginPath(); c.moveTo(-10, base); fn(base); c.lineTo(W + 10, base); c.closePath(); c.fill(); };
+  if(kind === 'dunes'){
+    layer('rgba(70,46,22,0.8)', groundY, b => { for(let x=-10;x<=W+10;x+=12) c.lineTo(x, b - 22 - Math.sin(x*0.009)*18 - Math.sin(x*0.023 + 1)*7); });
+    layer('rgba(44,28,14,0.95)', groundY, b => { for(let x=-10;x<=W+10;x+=12) c.lineTo(x, b - 8 - Math.abs(Math.sin(x*0.006 + 2))*20); });
+  } else if(kind === 'mountains'){
+    const peaks = (col, base, hmax, seed, cap) => {
+      c.fillStyle = col; c.beginPath(); c.moveTo(-10, base);
+      const pts = [];
+      for(let i=0, x=-10; x < W + 60; i++){ const w2 = 60 + rnd(seed+i)*90, hh = hmax*(0.45 + rnd(seed+i+50)*0.55);
+        pts.push([x + w2/2, base - hh]); c.lineTo(x + w2/2, base - hh); c.lineTo(x + w2, base - hh*0.25); x += w2; }
+      c.lineTo(W + 10, base); c.closePath(); c.fill();
+      if(cap){ c.fillStyle = 'rgba(230,240,250,0.75)'; for(const [px,py] of pts){ c.beginPath(); c.moveTo(px, py); c.lineTo(px + 12, py + 14); c.lineTo(px - 12, py + 14); c.closePath(); c.fill(); } }
+    };
+    peaks('rgba(40,58,78,0.85)', groundY, 120, 10, true);
+    peaks('#121a24', groundY, 50, 40, false);
+  } else if(kind === 'deadtrees'){
+    layer('rgba(18,30,24,0.9)', groundY, b => { for(let x=-10;x<=W+10;x+=20) c.lineTo(x, b - 10 - rnd(x)*8); });
+    c.strokeStyle = '#0a120e'; c.lineCap = 'round';
+    for(let i=0;i<9;i++){ const x = rnd(i+11)*W, h = 50 + rnd(i+21)*60;
+      c.lineWidth = 4; c.beginPath(); c.moveTo(x, groundY); c.lineTo(x + 4, groundY - h); c.stroke();
+      c.lineWidth = 2; c.beginPath(); c.moveTo(x + 3, groundY - h*0.6); c.lineTo(x + 18, groundY - h*0.85);
+      c.moveTo(x + 2, groundY - h*0.75); c.lineTo(x - 14, groundY - h*0.98); c.stroke(); }
+  } else if(kind === 'scrap'){
+    layer('rgba(40,24,18,0.9)', groundY, b => { for(let x=-10;x<=W+10;x+=14) c.lineTo(x, b - 14 - rnd(x*0.3)*26 - Math.sin(x*0.01)*10); });
+    c.strokeStyle = '#120b08'; c.lineWidth = 3;
+    for(const k of [0.18, 0.72]){ const x = W*k, h = 120; // портовые краны
+      c.beginPath(); c.moveTo(x, groundY - 20); c.lineTo(x, groundY - h); c.lineTo(x + 70, groundY - h + 8);
+      c.moveTo(x, groundY - h + 18); c.lineTo(x + 50, groundY - h + 8); c.moveTo(x + 60, groundY - h + 8); c.lineTo(x + 60, groundY - h + 46); c.stroke(); }
+  } else if(kind === 'canopy'){
+    for(const [col, dy, rr] of [['rgba(14,40,26,0.9)', 30, 40], ['#08160e', 6, 30]]){
+      c.fillStyle = col;
+      for(let x=-20; x<W+40; x += rr*1.3){ c.beginPath(); c.arc(x + rnd(x)*12, groundY - dy - rnd(x+3)*20, rr + rnd(x+7)*14, 0, Math.PI*2); c.fill(); }
+      c.fillRect(0, groundY - dy, W, dy);
+    }
+  } else if(kind === 'burnt'){
+    layer('rgba(30,26,30,0.9)', groundY, b => { for(let x=-10;x<=W+10;x+=20) c.lineTo(x, b - 6 - rnd(x)*6); });
+    c.fillStyle = '#0b0a0d';
+    for(let i=0;i<16;i++){ const x = rnd(i+60)*W, h = 30 + rnd(i+70)*70; c.fillRect(x, groundY - h, 4 + rnd(i)*3, h); }
+    c.fillStyle = '#ff7a3a'; // тлеющие головёшки
+    for(let i=0;i<10;i++){ c.globalAlpha = 0.4 + 0.4*Math.sin(t*3 + i*1.9); c.fillRect(rnd(i+90)*W, groundY - 3 - rnd(i+95)*20, 2.5, 2.5); }
+    c.globalAlpha = 1;
+  } else if(kind === 'icecliffs'){
+    for(const [col, top, hmax, seed] of [['rgba(60,110,150,0.8)', 'rgba(200,235,255,0.7)', 100, 5], ['#0d2236', null, 46, 30]]){
+      c.fillStyle = col; c.beginPath(); c.moveTo(-10, groundY);
+      for(let i=0, x=-10; x < W + 40; i++){ const w2 = 40 + rnd(seed+i)*70, hh = hmax*(0.4 + rnd(seed+i+9)*0.6);
+        c.lineTo(x, groundY - hh); c.lineTo(x + w2, groundY - hh*(0.7 + rnd(i)*0.3)); x += w2; }
+      c.lineTo(W + 10, groundY); c.closePath(); c.fill();
+      if(top){ c.strokeStyle = top; c.lineWidth = 2; c.stroke(); }
+    }
+  } else if(kind === 'spires'){
+    for(const [col, hmax, seed] of [['rgba(60,36,100,0.8)', 150, 3], ['#120a22', 70, 20]]){
+      c.fillStyle = col;
+      for(let i=0;i<14;i++){ const x = rnd(seed+i)*W, h = hmax*(0.4 + rnd(seed+i+40)*0.6), w2 = 8 + rnd(i)*14;
+        c.beginPath(); c.moveTo(x - w2, groundY); c.lineTo(x, groundY - h); c.lineTo(x + w2, groundY); c.closePath(); c.fill(); }
+    }
+  } else if(kind === 'volcano'){
+    const vx = W*0.62, vh = Math.min(170, groundY*0.55), top = groundY - vh;
+    const cone = c.createLinearGradient(vx - 220, 0, vx + 220, 0); // конус: склон, подсвеченный лавой
+    cone.addColorStop(0, '#1a0806'); cone.addColorStop(0.45, '#3a120a'); cone.addColorStop(1, '#14060a');
+    c.fillStyle = cone;
+    c.beginPath(); c.moveTo(vx - 240, groundY); c.lineTo(vx - 34, top); c.lineTo(vx + 34, top); c.lineTo(vx + 240, groundY); c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(255,120,50,0.35)'; c.lineWidth = 2; // кромка склона ловит отсвет
+    c.beginPath(); c.moveTo(vx - 240, groundY); c.lineTo(vx - 34, top); c.lineTo(vx + 34, top); c.stroke();
+    const lg = c.createLinearGradient(0, top, 0, groundY); // широкий светящийся поток лавы по склону
+    lg.addColorStop(0, '#ffe08a'); lg.addColorStop(0.5, '#ff7a2a'); lg.addColorStop(1, '#a8240f');
+    c.save(); c.shadowColor = '#ff6a2a'; c.shadowBlur = 16;
+    c.fillStyle = lg;
+    c.beginPath();
+    c.moveTo(vx - 14, top);
+    c.quadraticCurveTo(vx - 40, top + vh*0.45, vx - 70, groundY);
+    c.lineTo(vx - 34, groundY);
+    c.quadraticCurveTo(vx - 14, top + vh*0.45, vx + 10, top);
+    c.closePath(); c.fill();
+    c.restore();
+    const cg = c.createRadialGradient(vx, top, 4, vx, top, 120); // жерло светится
+    cg.addColorStop(0, 'rgba(255,140,50,0.75)'); cg.addColorStop(1, 'rgba(255,80,30,0)');
+    c.fillStyle = cg; c.fillRect(vx - 120, top - 120, 240, 240);
+    for(let i=0;i<7;i++){ const st = (t*0.25 + i*0.14) % 1; // столб дыма
+      c.globalAlpha = 0.5*(1 - st); c.fillStyle = '#2a1a18';
+      c.beginPath(); c.arc(vx + Math.sin(st*4 + i)*16 + st*40, groundY - vh - 20 - st*170, 16 + st*40, 0, Math.PI*2); c.fill(); }
+    c.globalAlpha = 1;
+    for(let i=0;i<6;i++){ const bt = (t*0.7 + i*0.17) % 1; // вылетающие бомбы лавы
+      c.fillStyle = '#ffb04a'; c.globalAlpha = 1 - bt;
+      c.beginPath(); c.arc(vx + (rnd(i+3) - 0.5)*160*bt, groundY - vh - 140*bt + 160*bt*bt, 3, 0, Math.PI*2); c.fill(); }
+    c.globalAlpha = 1;
+    c.fillStyle = '#0c0405';
+    c.beginPath(); c.moveTo(-10, groundY); for(let x=-10;x<=W+10;x+=16) c.lineTo(x, groundY - 6 - rnd(x)*12); c.lineTo(W+10, groundY); c.closePath(); c.fill();
+  }
 }
 
 function render(){
@@ -4346,9 +4575,10 @@ function render(){
     const isIntro = !story.finale && !story.bossDef;
     // декорации главы — ПРОЙДЕННЫЙ биом (на его земле и стоим);
     // следующий проглядывает полосой у самого горизонта
-    const doneBiome = story.bossNum ? BIOMES[(story.bossNum - 1) % BIOMES.length] : BIOMES[0];
+    const doneIdx = story.finale ? 9 : story.bossNum ? (story.bossNum - 1) % BIOMES.length : 0;
+    const doneBiome = BIOMES[doneIdx];
     const nextBiome = story.bossNum ? BIOMES[story.bossNum % BIOMES.length] : BIOMES[0];
-    const doneIdx = story.bossNum ? (story.bossNum - 1) % BIOMES.length : 0;
+    const theme = isIntro ? SCENE_THEMES[0] : SCENE_THEMES[doneIdx];
     const hexA = (hex, a) => { // #rrggbb -> rgba
       const n = parseInt(hex.slice(1), 16);
       return 'rgba(' + (n>>16) + ',' + ((n>>8)&255) + ',' + (n&255) + ',' + a + ')';
@@ -4370,10 +4600,10 @@ function render(){
 
     // небо: глубокий градиент с багровым заревом у горизонта
     const sky = ctx.createLinearGradient(0, 0, 0, groundY);
-    sky.addColorStop(0, '#04060b');
-    sky.addColorStop(0.5, story.finale ? '#131a2c' : '#0f1219');
-    sky.addColorStop(0.82, story.finale ? '#2e2442' : '#2c161b');
-    sky.addColorStop(1, story.finale ? '#5c3c20' : '#5c261c');
+    sky.addColorStop(0, theme.sky[0]);
+    sky.addColorStop(0.5, theme.sky[1]);
+    sky.addColorStop(0.82, theme.sky[2]);
+    sky.addColorStop(1, theme.sky[3]);
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, W, groundY);
 
@@ -4385,23 +4615,9 @@ function render(){
     }
     ctx.globalAlpha = 1;
 
-    // кроваво-красная луна: ореол, освещённый серп, кратеры
-    const mx = W*0.82, my = bh + 56;
-    const halo = ctx.createRadialGradient(mx, my, 8, mx, my, 110);
-    halo.addColorStop(0, 'rgba(210,70,50,0.4)');
-    halo.addColorStop(1, 'rgba(210,70,50,0)');
-    ctx.fillStyle = halo; ctx.fillRect(mx-110, my-110, 220, 220);
-    ctx.fillStyle = '#7e2a20';
-    ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI*2); ctx.fill();
-    ctx.save();
-    ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI*2); ctx.clip();
-    ctx.fillStyle = '#a5402e';
-    ctx.beginPath(); ctx.arc(mx - 7, my - 7, 30, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#692017';
-    ctx.beginPath(); ctx.arc(mx - 9, my - 4, 6, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(mx + 9, my + 9, 4.5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(mx + 2, my - 14, 3, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
+    // светило темы: красная луна, мутное солнце пустыни, две луны сумрака...
+    drawSceneSun(ctx, theme.sun, t, W, groundY, bh);
+    if(theme.aurora) drawSceneAurora(ctx, theme.aurora, t, W, bh, groundY);
 
     // тучи дрейфуют двумя слоями (ближний цепляет луну)
     for(let L=0; L<2; L++){
@@ -4418,7 +4634,7 @@ function render(){
 
     // молния: ломаная ветка + вспышка всего неба
     const fseed = Math.floor(t*0.55), fphase = t*0.55 - fseed;
-    if(rnd(fseed + 500) > 0.6 && fphase < 0.16){
+    if(theme.storm && rnd(fseed + 500) > 0.6 && fphase < 0.16){
       const fa = 1 - fphase/0.16;
       ctx.fillStyle = 'rgba(220,228,255,' + (0.1*fa).toFixed(3) + ')';
       ctx.fillRect(0, 0, W, groundY);
@@ -4435,31 +4651,33 @@ function render(){
       ctx.stroke();
     }
 
-    // руины города на горизонте: два плана силуэтов, редкие тлеющие окна
-    for(let L=0; L<2; L++){
-      ctx.fillStyle = L ? '#0d1016' : '#161a23';
-      const base = groundY - (L ? 0 : 10);
-      let bx2 = -10, bi = L*37;
-      while(bx2 < W + 40){
-        const bw = 26 + rnd(bi)*46;
-        const bht = (L ? 26 : 14) + rnd(bi+1)*(L ? 64 : 34);
-        ctx.fillRect(bx2, base - bht, bw, bht);
-        if(rnd(bi+2) > 0.55){ // разрушенная верхушка
-          ctx.beginPath();
-          ctx.moveTo(bx2, base - bht);
-          ctx.lineTo(bx2 + bw*rnd(bi+3), base - bht - 8 - rnd(bi+4)*10);
-          ctx.lineTo(bx2 + bw, base - bht);
-          ctx.fill();
+    // горизонт: руины города в степи, у остальных биомов — свои силуэты
+    if(theme.horizon === 'ruins'){
+      for(let L=0; L<2; L++){
+        ctx.fillStyle = L ? '#0d1016' : '#161a23';
+        const base = groundY - (L ? 0 : 10);
+        let bx2 = -10, bi = L*37;
+        while(bx2 < W + 40){
+          const bw = 26 + rnd(bi)*46;
+          const bht = (L ? 26 : 14) + rnd(bi+1)*(L ? 64 : 34);
+          ctx.fillRect(bx2, base - bht, bw, bht);
+          if(rnd(bi+2) > 0.55){ // разрушенная верхушка
+            ctx.beginPath();
+            ctx.moveTo(bx2, base - bht);
+            ctx.lineTo(bx2 + bw*rnd(bi+3), base - bht - 8 - rnd(bi+4)*10);
+            ctx.lineTo(bx2 + bw, base - bht);
+            ctx.fill();
+          }
+          if(L && rnd(bi+5) > 0.8){
+            ctx.fillStyle = 'rgba(255,140,60,' + (0.3 + 0.3*Math.sin(t*3 + bi)).toFixed(3) + ')';
+            ctx.fillRect(bx2 + bw*0.3, base - bht*0.55, 2.5, 3.5);
+            ctx.fillStyle = L ? '#0d1016' : '#161a23';
+          }
+          bx2 += bw + 4 + rnd(bi+6)*26;
+          bi += 7;
         }
-        if(L && rnd(bi+5) > 0.8){
-          ctx.fillStyle = 'rgba(255,140,60,' + (0.3 + 0.3*Math.sin(t*3 + bi)).toFixed(3) + ')';
-          ctx.fillRect(bx2 + bw*0.3, base - bht*0.55, 2.5, 3.5);
-          ctx.fillStyle = L ? '#0d1016' : '#161a23';
-        }
-        bx2 += bw + 4 + rnd(bi+6)*26;
-        bi += 7;
       }
-    }
+    } else drawSceneHorizon(ctx, theme.horizon, t, W, groundY, rnd);
 
     // зарево у горизонта в тонах пройденного биома — главы различаются с порога
     const tint = ctx.createLinearGradient(0, bh, 0, groundY);
@@ -4659,8 +4877,34 @@ function render(){
       ctx.beginPath(); ctx.ellipse(bx, by + 30, 72, 14, 0, 0, Math.PI*2); ctx.fill();
       firelight(bx, by - 10, 150, 0.2 + 0.07*Math.sin(t*9.3));
       drawTankSide({ x:bx, y:by, dir:-1, tilt:-0.14, barrelA:0.38 },
-                   { hullColor:bd.hull, darkColor:bd.dark, scale:1.65,
-                     fx: { pattern: bd.fx.pattern, antenna: bd.fx.antenna, eyeColor: bd.fx.eyeColor } });
+                   { hullColor:bd.hull, darkColor:bd.dark, scale:1.65 * (bd.hpMult > 1.2 ? 1.12 : 1),
+                     fx: bossSideFx(bd) });
+      if(bd.drones){ // его рой: сбитые дроны дымятся на земле, один ещё кружит подбитым
+        for(const [dx2, dy2, a2] of [[-110, 30, 0.5], [70, 40, -0.4]]){
+          ctx.save(); ctx.translate(bx + dx2, by + dy2); ctx.rotate(a2);
+          ctx.fillStyle = '#20252c'; ctx.fillRect(-12, -3, 24, 6);
+          ctx.fillRect(-16, -5, 8, 2); ctx.fillRect(8, -5, 8, 2);
+          ctx.restore();
+          ctx.globalAlpha = 0.4; ctx.fillStyle = '#3c444d';
+          ctx.beginPath(); ctx.arc(bx + dx2, by + dy2 - 14, 7, 0, Math.PI*2); ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        const ox = bx - 40 + Math.cos(t*1.3)*60, oy = by - 110 + Math.sin(t*2.6)*14;
+        ctx.save(); ctx.translate(ox, oy); ctx.rotate(Math.sin(t*5)*0.4);
+        ctx.fillStyle = bd.hull; ctx.fillRect(-11, -3, 22, 6);
+        ctx.fillStyle = '#20252c'; ctx.fillRect(-15, -6, 8, 2); ctx.fillRect(7, -6, 8, 2);
+        ctx.restore();
+      }
+      if(bd.spiral){ // шторм: разряды пляшут по корпусу
+        ctx.strokeStyle = '#bfe4ff'; ctx.lineWidth = 2;
+        for(let i=0;i<3;i++){
+          if(((t*3 + i*0.37) % 1) > 0.3) continue;
+          let lx = bx - 60 + i*50, ly = by - 70;
+          ctx.beginPath(); ctx.moveTo(lx, ly);
+          for(let k=0;k<4;k++){ lx += (rnd(Math.floor(t*10) + i*7 + k) - 0.5)*24; ly += 14; ctx.lineTo(lx, ly); }
+          ctx.stroke();
+        }
+      }
       // пламя
       for(let i=0;i<6;i++){
         const ft = (t*1.6 + i*0.23) % 0.9;
@@ -4803,8 +5047,9 @@ function render(){
         ctx.restore();
       } else {
         const yi = baseY + 16 + (i - scroll)*lineH;
-        if(yi > baseY + 8 && yi < H - bh - 6){
-          ctx.globalAlpha = la * Math.min(1, (yi - baseY - 8)/14);
+        const topY = baseY + f1*0.7 + 4; // строки гаснут у нижнего края заголовка, не залезая на него
+        if(yi > topY && yi < H - bh - 6){
+          ctx.globalAlpha = la * Math.min(1, (yi - topY)/16);
           ctx.fillStyle = '#e8eef2';
           ctx.font = f2 + 'px "Russo One", sans-serif';
           ctx.fillText(ln, W/2, yi);

@@ -495,15 +495,17 @@ function makeScenery(){
   const n = Math.round(W*H/36000);
   for(let i=0;i<n;i++){
     const r = Math.random();
-    const kind = r<0.3 ? 'crater' : r<0.58 ? 'bush' : r<0.78 ? 'rock' : 'spec';
-    const s = 0.7+Math.random()*0.7;
+    const kind = r<0.28 ? 'crater' : r<0.52 ? 'bush' : r<0.72 ? 'rock' : r<0.8 ? 'hedge' : 'spec';
+    // размеры — от радиуса танка (22): камень 0.7–0.9 танка, ёж ~0.55, остальное как было
+    const s = kind === 'rock' ? 1.3 + Math.random()*0.3 : kind === 'hedge' ? 1 : 0.7+Math.random()*0.7;
     decor.push({
       x: Math.random()*(W-40)+20, y: Math.random()*(H-40)+20,
       // spec — фирменный декор биома (кактус, льдина, кристалл...)
       kind, s, a: Math.random()*Math.PI*2,
       // камни — разрушаемые укрытия (блокируют снаряды), spec бьётся в части биомов
-      hp: kind === 'rock' ? 3 : (kind === 'spec' ? 2 : 0),
-      rad: (kind === 'rock' ? 13 : 10)*s
+      // ёж — стальной, держит больше попаданий
+      hp: kind === 'rock' ? 3 : kind === 'hedge' ? 5 : (kind === 'spec' ? 2 : 0),
+      rad: kind === 'rock' ? 12*s : kind === 'hedge' ? 12 : 10*s
     });
   }
   // мягкий свет в центре поля — объём вместо плоской заливки
@@ -1578,7 +1580,10 @@ function spawnBoss(){
   // в выживании (после 100-й) боссы идут по второму кругу, но сильнее
   const def = BOSS_DEFS[(num-1) % BOSS_DEFS.length];
   const D = currentDiff();
-  const hp = Math.round((380 + 240*num + (final ? 400 : 0)) * (def.hpMult || 1) * D.hp
+  // +6% за каждый номер: первый босс прежний, Император в 1.5 раза крепче (в выживании рост замирает,
+  // дальше крепчает только база 380+240·num)
+  const grow = 1 + 0.06*Math.min(num - 1, 9);
+  const hp = Math.round((380 + 240*num + (final ? 400 : 0)) * grow * (def.hpMult || 1) * D.hp
                         * (mutIs('twins') ? 0.65 : 1)); // двойники делят здоровье
   boss = {
     num, final, def, x: W+140, y: H/2, r: final ? 62 : 52, hp, maxHp:hp,
@@ -1671,7 +1676,8 @@ function startWave(n){
 }
 
 // Класс танка + перки за побеждённых боссов (детерминированно от номера волны).
-// С каждым боссом: +10 HP, +2 урон, −3% перезарядка, +2 скорость, +0.4с к бонусам;
+// С каждым боссом: +12 HP, +20% к базовому урону класса (Балбес +3, Трус +2, Бывалый +6),
+// −3% перезарядка, +2 скорость, +0.3с к бонусам;
 // с 3-го босса открывается регенерация и растёт дальше.
 function applyProgress(wave){
   const cls = playerClass();
@@ -1679,7 +1685,8 @@ function applyProgress(wave){
   const sups = Math.max(0, ups - 10); // сверх-перки выживания: за боссов после 100-й
   const mut = mutatorFor(wave); // мутатор декады влияет и на игрока
   player.maxHp = cls.hp + ups*12 + sups*6;
-  player.dmg = Math.round((cls.dmg + ups*3 + sups*2) * (mut && mut.id === 'duel' ? 1.25 : 1));
+  // проценты, а не плюс-сколько-то всем поровну: иначе быстрый Трус обгонял тяжёлого Бывалого по боссам
+  player.dmg = Math.round(cls.dmg * (1 + ups*0.2 + sups*0.13) * (mut && mut.id === 'duel' ? 1.25 : 1));
   player.speed = (cls.speed + ups*2) * (mut && mut.id === 'blitz' ? 1.3 : 1);
   player.cdMult = Math.max(0.75, 1 - ups*0.03) * (mut && mut.id === 'blitz' ? 0.8 : 1);
   player.regen = ((mut && mut.id === 'vamp') ? 0 : (ups >= 3 ? 0.2*(ups-2) : 0))
@@ -1823,11 +1830,11 @@ function onBossKilled(){
     return;
   }
   // награда: пересчитываем все перки на новый уровень и лечим
+  const hp0 = player.maxHp, dmg0 = player.dmg;
   applyProgress(state.wave + 1);
   player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp*0.5));
   addFloat(player.x, player.y - 44,
-    state.wave >= TOTAL_WAVES ? 'БРОНЯ +18 · СНАРЯД +5 · РУКИ БЫСТРЕЕ' : 'БРОНЯ +12 · СНАРЯД +3 · РУКИ БЫСТРЕЕ',
-    '#6fe58f');
+    'БРОНЯ +' + (player.maxHp - hp0) + ' · СНАРЯД +' + (player.dmg - dmg0) + ' · РУКИ БЫСТРЕЕ', '#6fe58f');
   if(b.num === 3) addFloat(player.x, player.y - 70, 'НОВЫЙ ПЕРК: РЕГЕНЕРАЦИЯ!', '#f1c40f');
   else if(b.num > 3) addFloat(player.x, player.y - 70, 'РЕГЕН +0.2/с · БОНУСЫ ДОЛЬШЕ', '#f1c40f');
   sfx.win();
@@ -2061,8 +2068,8 @@ function leaveTrack(t, scale){
 // ---------- shooting ----------
 function playerShoot(){
   // Тройной бонус; на максимальной прокачке — пять стволов.
-  // Многоствольные скины стреляют из каждого ствола, но каждый — на треть слабее:
-  // Горыныч — три головы, Двустволка — два ствола.
+  // Многоствольные скины делят урон между стволами — по одной цели это честно, как у обычного:
+  // Двустволка по 1/2 на ствол; Горыныч по 0.4 на голову — пасхалка-легенда «+20%», если все три попали.
   const skb = (playerSkin().fx || {}).barrel;
   let offs, lats = null, dmg = player.dmg;
   if(player.tripleT > 0){
@@ -2070,11 +2077,11 @@ function playerShoot(){
   } else if(skb === 'triple'){
     offs = [-0.08, 0, 0.08];
     lats = [-8.5, 0, 8.5];
-    dmg = Math.max(1, Math.round(player.dmg * 2 / 3));
+    dmg = Math.max(1, player.dmg * 0.4);
   } else if(skb === 'double'){
     offs = [-0.05, 0.05];
     lats = [-5.5, 5.5];
-    dmg = Math.max(1, Math.round(player.dmg * 2 / 3));
+    dmg = Math.max(1, player.dmg * 0.5);
   } else {
     offs = [0];
   }
@@ -2403,9 +2410,11 @@ function update(dt){
   let aimA = null;
   if(IS_TOUCH && !mouse.used){
     let best2 = null, bd = Infinity;
-    for(const e of enemies){ const d = dist(player.x,player.y,e.x,e.y); if(d<bd){ bd=d; best2=e; } }
-    for(const dr of drones){ const d = dist(player.x,player.y,dr.x,dr.y); if(d<bd){ bd=d; best2=dr; } }
-    if(boss){ const d = dist(player.x,player.y,boss.x,boss.y); if(d<bd){ bd=d; best2=boss; } }
+    // целимся только в тех, кто уже выехал на поле: пока колонна за краем — не палим впустую
+    const onField = o => o.x > 0 && o.x < W && o.y > 0 && o.y < H;
+    for(const e of enemies){ if(!onField(e)) continue; const d = dist(player.x,player.y,e.x,e.y); if(d<bd){ bd=d; best2=e; } }
+    for(const dr of drones){ if(!onField(dr)) continue; const d = dist(player.x,player.y,dr.x,dr.y); if(d<bd){ bd=d; best2=dr; } }
+    if(boss && onField(boss)){ const d = dist(player.x,player.y,boss.x,boss.y); if(d<bd){ bd=d; best2=boss; } }
     if(best2){
       // упреждение по быстрым целям (дроны): целимся туда, где цель будет к прилёту пули
       let tx = best2.x, ty = best2.y;
@@ -2455,6 +2464,7 @@ function update(dt){
         const cand = (boss && !boss.entering) ? enemies.concat([boss]) : enemies;
         for(const e of cand){
           if(dist(player.x, player.y, e.x, e.y) > 560) continue;
+          if(e.x < 0 || e.x > W || e.y < 0 || e.y > H) continue; // за краем карты не летаем
           let sc2 = e === boss ? 2.5 : 1;
           for(const o of enemies) if(o !== e && dist(e.x, e.y, o.x, o.y) < 80) sc2++;
           if(sc2 > bestScore){ bestScore = sc2; best = e; }
@@ -2866,9 +2876,9 @@ function update(dt){
         if(dd.kind === 'spec' && BIc !== 1 && BIc !== 2 && BIc !== 6 && BIc !== 7) continue;
         if(dist(b.x, b.y, dd.x, dd.y) < dd.rad + b.r){
           dd.hp--;
-          explode(b.x, b.y, '#8d8578', 4); sfx.hit();
+          explode(b.x, b.y, dd.kind === 'hedge' ? '#ffd27a' : '#8d8578', 4); sfx.hit();
           if(dd.hp <= 0){
-            explode(dd.x, dd.y, (BIc === 2 || BIc === 7) ? '#dfeef8' : '#6b5a42', 12);
+            explode(dd.x, dd.y, dd.kind === 'hedge' ? '#9aa3ab' : (BIc === 2 || BIc === 7) ? '#dfeef8' : '#6b5a42', 12);
             decor.splice(j, 1);
           }
           hitObst = true; break;
@@ -2972,6 +2982,72 @@ function update(dt){
 }
 
 // ---------- drawing ----------
+// взрывная бочка, вид 3/4: цилиндр с объёмом, два обруча, крышка с пробкой,
+// жёлтый знак «огнеопасно»; горящий фитиль мигает над пробкой
+function drawBarrel(c, x, y, fuse, time){
+  c.save();
+  c.translate(x, y);
+  c.fillStyle = 'rgba(0,0,0,0.32)';                         // тень на земле
+  c.beginPath(); c.ellipse(3, 9, 12, 4.5, 0, 0, Math.PI*2); c.fill();
+  const g = c.createLinearGradient(-9, 0, 9, 0);            // бока круглые: свет слева
+  g.addColorStop(0, '#7a1f1b'); g.addColorStop(0.3, '#c53a2e');
+  g.addColorStop(0.65, '#9c2b23'); g.addColorStop(1, '#5a1512');
+  c.fillStyle = g;
+  c.beginPath();
+  c.moveTo(-9, -9); c.lineTo(-9, 7);
+  c.ellipse(0, 7, 9, 3.4, 0, Math.PI, 0, true);            // скруглённое дно
+  c.lineTo(9, -9); c.closePath(); c.fill();
+  c.strokeStyle = '#3a0f0c'; c.lineWidth = 1.8;             // обручи — дуги по фасаду
+  for(const hy of [-4.5, 3.5]){
+    c.beginPath(); c.ellipse(0, hy, 9, 3.4, 0, 0, Math.PI); c.stroke();
+  }
+  c.fillStyle = '#f6d32d';                                  // знак «огнеопасно»
+  c.beginPath(); c.moveTo(0, -3.4); c.lineTo(3.6, 2.4); c.lineTo(-3.6, 2.4); c.closePath(); c.fill();
+  c.fillStyle = '#2b1410';
+  c.fillRect(-0.6, -1.6, 1.2, 2.4); c.fillRect(-0.6, 1.2, 1.2, 0.8);
+  c.fillStyle = '#d2483a';                                  // крышка
+  c.beginPath(); c.ellipse(0, -9, 9, 3.4, 0, 0, Math.PI*2); c.fill();
+  c.strokeStyle = '#5a1512'; c.lineWidth = 1.2;
+  c.beginPath(); c.ellipse(0, -9, 7.4, 2.6, 0, 0, Math.PI*2); c.stroke();
+  c.fillStyle = '#2b1410';                                  // пробка
+  c.beginPath(); c.ellipse(3.4, -9.2, 1.7, 0.9, 0, 0, Math.PI*2); c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.28)';                   // блик
+  c.fillRect(-6.4, -6, 1.8, 11);
+  if(fuse){                                                 // фитиль горит!
+    const on = Math.sin(time*30) > 0;
+    c.strokeStyle = '#2b1410'; c.lineWidth = 1.2;           // хвостик фитиля из пробки
+    c.beginPath(); c.moveTo(3.4, -9.4); c.lineTo(4.2, -12); c.stroke();
+    c.globalAlpha = on ? 0.9 : 0.35;                        // мигает только сияние
+    c.fillStyle = '#ffd84d';
+    c.beginPath(); c.arc(4.2, -13, on ? 3.4 : 2.6, 0, Math.PI*2); c.fill();
+    c.globalAlpha = 1;
+    c.fillStyle = on ? '#fff3b0' : '#ff8a2f';               // уголёк горит всегда
+    c.beginPath(); c.arc(4.2, -13, 1.5, 0, Math.PI*2); c.fill();
+  }
+  c.restore();
+}
+// противотанковый ёж, вид 3/4: три стальные балки накрест, на перекрестье — пластина
+function drawHedge(c, rusty){
+  const dark = rusty ? '#3e2a22' : '#2a2f35', mid = rusty ? '#7a4f38' : '#59626b', lit = rusty ? '#a8714f' : '#9aa5ae';
+  c.fillStyle = 'rgba(0,0,0,0.3)';
+  c.beginPath(); c.ellipse(1, 8, 13, 4.5, 0, 0, Math.PI*2); c.fill();
+  c.lineCap = 'butt';
+  const beam = (x0, y0, x1, y1) => {
+    c.strokeStyle = dark; c.lineWidth = 6.4;
+    c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+    c.strokeStyle = mid; c.lineWidth = 4.2;
+    c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+    c.strokeStyle = lit; c.lineWidth = 1.4;                   // грань балки ловит свет
+    c.beginPath(); c.moveTo(x0 - 1, y0 - 1); c.lineTo(x1 - 1, y1 - 1); c.stroke();
+  };
+  beam(-4, 10, 4, -14);   // дальняя балка (в глубину)
+  beam(-13, 8, 12, -10);
+  beam(12, 8, -13, -10);
+  c.fillStyle = dark;
+  c.beginPath(); c.arc(-0.5, -1, 3.8, 0, Math.PI*2); c.fill();
+  c.fillStyle = lit;
+  c.beginPath(); c.arc(-1.4, -1.9, 1.4, 0, Math.PI*2); c.fill();
+}
 function rrectC(c,x,y,w,h,r){
   c.beginPath();
   c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
@@ -3949,6 +4025,472 @@ function drawSceneHorizon(c, kind, t, W, groundY, rnd){
   }
 }
 
+// кино-сцена главы (небо, биом, герой, генерал) — общая для заставки и миниатюр фотоальбома;
+// ctx/W/H — холст и размеры мира, S — {finale, bossDef, bossNum}
+function drawStoryScene(ctx, W, H, t, S){
+  const bh = Math.min(64, H*0.1);          // киношные чёрные полосы
+  const groundY = H*0.44;
+  const isIntro = !S.finale && !S.bossDef;
+  // декорации главы — ПРОЙДЕННЫЙ биом (на его земле и стоим);
+  // следующий проглядывает полосой у самого горизонта
+  const doneIdx = S.finale ? 9 : S.bossNum ? (S.bossNum - 1) % BIOMES.length : 0;
+  const doneBiome = BIOMES[doneIdx];
+  const nextBiome = S.bossNum ? BIOMES[S.bossNum % BIOMES.length] : BIOMES[0];
+  const theme = isIntro ? SCENE_THEMES[0] : SCENE_THEMES[doneIdx];
+  const hexA = (hex, a) => { // #rrggbb -> rgba
+    const n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + (n>>16) + ',' + ((n>>8)&255) + ',' + (n&255) + ',' + a + ')';
+  };
+  const rnd = i => { const v = Math.sin(i*127.17 + 7.31)*43758.5453; return v - Math.floor(v); };
+  const firelight = (x,y,r,a) => { // тёплое пятно света от огня
+    const g = ctx.createRadialGradient(x, y, 4, x, y, r);
+    g.addColorStop(0, 'rgba(255,150,60,' + a + ')');
+    g.addColorStop(1, 'rgba(255,150,60,0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g; ctx.fillRect(x-r, y-r, r*2, r*2);
+    ctx.globalCompositeOperation = 'source-over';
+  };
+
+  // кинокамера: медленный наезд
+  ctx.save();
+  const zoom = 1 + Math.min(0.06, t*0.007);
+  ctx.translate(W/2, H*0.52); ctx.scale(zoom, zoom); ctx.translate(-W/2, -H*0.52);
+
+  // небо: глубокий градиент с багровым заревом у горизонта
+  const sky = ctx.createLinearGradient(0, 0, 0, groundY);
+  sky.addColorStop(0, theme.sky[0]);
+  sky.addColorStop(0.5, theme.sky[1]);
+  sky.addColorStop(0.82, theme.sky[2]);
+  sky.addColorStop(1, theme.sky[3]);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, groundY);
+
+  // мерцающие звёзды
+  ctx.fillStyle = '#cfe0ff';
+  for(let i=0;i<34;i++){
+    ctx.globalAlpha = (0.15 + 0.5*rnd(i+200)) * (0.55 + 0.45*Math.sin(t*(1 + rnd(i+300)*2.5) + i*2.1));
+    ctx.fillRect(rnd(i)*W, rnd(i+100)*groundY*0.55, 1.7, 1.7);
+  }
+  ctx.globalAlpha = 1;
+
+  // светило темы: красная луна, мутное солнце пустыни, две луны сумрака...
+  drawSceneSun(ctx, theme.sun, t, W, groundY, bh);
+  if(theme.aurora) drawSceneAurora(ctx, theme.aurora, t, W, bh, groundY);
+
+  // тучи дрейфуют двумя слоями (ближний цепляет луну)
+  for(let L=0; L<2; L++){
+    ctx.fillStyle = L ? 'rgba(7,9,14,0.42)' : 'rgba(13,15,22,0.3)';
+    const spd = L ? 11 : 6, yy = bh + 14 + L*58;
+    for(let i=0;i<5;i++){
+      const cw = 150 + rnd(i + L*9)*190;
+      const cx2 = ((rnd(i + 40 + L*9)*(W + cw*2) + t*spd) % (W + cw*2)) - cw;
+      ctx.beginPath();
+      ctx.ellipse(cx2, yy + rnd(i + 60 + L*9)*30, cw, 13 + rnd(i + 70 + L*9)*9, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // молния: ломаная ветка + вспышка всего неба
+  const fseed = Math.floor(t*0.55), fphase = t*0.55 - fseed;
+  if(theme.storm && rnd(fseed + 500) > 0.6 && fphase < 0.16){
+    const fa = 1 - fphase/0.16;
+    ctx.fillStyle = 'rgba(220,228,255,' + (0.1*fa).toFixed(3) + ')';
+    ctx.fillRect(0, 0, W, groundY);
+    ctx.strokeStyle = 'rgba(235,240,255,' + (0.9*fa).toFixed(3) + ')';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let lx = (0.12 + 0.5*rnd(fseed + 600))*W, ly = 0;
+    ctx.moveTo(lx, ly);
+    for(let i=1;i<=7;i++){
+      lx += (rnd(fseed*13 + i) - 0.5)*54;
+      ly = groundY*0.75*i/7;
+      ctx.lineTo(lx, ly);
+    }
+    ctx.stroke();
+  }
+
+  // горизонт: руины города в степи, у остальных биомов — свои силуэты
+  if(theme.horizon === 'ruins'){
+    for(let L=0; L<2; L++){
+      ctx.fillStyle = L ? '#0d1016' : '#161a23';
+      const base = groundY - (L ? 0 : 10);
+      let bx2 = -10, bi = L*37;
+      while(bx2 < W + 40){
+        const bw = 26 + rnd(bi)*46;
+        const bht = (L ? 26 : 14) + rnd(bi+1)*(L ? 64 : 34);
+        ctx.fillRect(bx2, base - bht, bw, bht);
+        if(rnd(bi+2) > 0.55){ // разрушенная верхушка
+          ctx.beginPath();
+          ctx.moveTo(bx2, base - bht);
+          ctx.lineTo(bx2 + bw*rnd(bi+3), base - bht - 8 - rnd(bi+4)*10);
+          ctx.lineTo(bx2 + bw, base - bht);
+          ctx.fill();
+        }
+        if(L && rnd(bi+5) > 0.8){
+          ctx.fillStyle = 'rgba(255,140,60,' + (0.3 + 0.3*Math.sin(t*3 + bi)).toFixed(3) + ')';
+          ctx.fillRect(bx2 + bw*0.3, base - bht*0.55, 2.5, 3.5);
+          ctx.fillStyle = L ? '#0d1016' : '#161a23';
+        }
+        bx2 += bw + 4 + rnd(bi+6)*26;
+        bi += 7;
+      }
+    }
+  } else drawSceneHorizon(ctx, theme.horizon, t, W, groundY, rnd);
+
+  // зарево у горизонта в тонах пройденного биома — главы различаются с порога
+  const tint = ctx.createLinearGradient(0, bh, 0, groundY);
+  tint.addColorStop(0, 'rgba(0,0,0,0)');
+  tint.addColorStop(1, hexA(doneBiome.bush[1], isIntro ? 0.12 : 0.3));
+  ctx.fillStyle = tint;
+  ctx.fillRect(0, bh, W, groundY - bh);
+
+  // земля: цвета ПРОЙДЕННОГО биома; у кромки — полоса следующего («что впереди»)
+  const gr = ctx.createLinearGradient(0, groundY, 0, H);
+  gr.addColorStop(0, doneBiome.grid);
+  gr.addColorStop(0.3, doneBiome.ground);
+  gr.addColorStop(1, '#0a0c0f');
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, groundY, W, H - groundY);
+  ctx.fillStyle = hexA(nextBiome.bush[1], 0.5);
+  ctx.fillRect(0, groundY, W, 5);
+  ctx.fillStyle = '#ffffff1a';
+  ctx.fillRect(0, groundY, W, 2);
+
+  // приметы пройденного биома на земле: силуэты между героем и горизонтом
+  if(!isIntro){
+    const prop = (px, py, s) => {
+      ctx.fillStyle = hexA(doneBiome.bush[0], 0.9);
+      ctx.strokeStyle = hexA(doneBiome.bush[1], 0.9);
+      ctx.lineWidth = Math.max(2, s*0.16);
+      if(doneIdx === 1){ // пустыня: кактус
+        ctx.beginPath(); ctx.roundRect(px - s*0.14, py - s, s*0.28, s, s*0.14); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(px - s*0.52, py - s*0.74, s*0.38, s*0.2, s*0.1); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(px - s*0.52, py - s*0.95, s*0.18, s*0.38, s*0.09); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(px + s*0.14, py - s*0.6, s*0.38, s*0.2, s*0.1); ctx.fill();
+      } else if(doneIdx === 2 || doneIdx === 7){ // снега/ледник: ель в снегу
+        ctx.beginPath();
+        ctx.moveTo(px, py - s*1.15); ctx.lineTo(px + s*0.46, py - s*0.28);
+        ctx.lineTo(px - s*0.46, py - s*0.28); ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(px, py - s*0.84); ctx.lineTo(px + s*0.58, py);
+        ctx.lineTo(px - s*0.58, py); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#e8f2f8cc'; // снежная шапка
+        ctx.beginPath(); ctx.ellipse(px, py - s*1.08, s*0.16, s*0.07, 0, 0, 7); ctx.fill();
+      } else if(doneIdx === 5){ // джунгли: пальма
+        ctx.beginPath(); ctx.moveTo(px - s*0.08, py);
+        ctx.quadraticCurveTo(px + s*0.1, py - s*0.6, px + s*0.3, py - s*1.02);
+        ctx.lineTo(px + s*0.44, py - s*0.96);
+        ctx.quadraticCurveTo(px + s*0.22, py - s*0.55, px + s*0.12, py);
+        ctx.closePath(); ctx.fill();
+        for(const la of [-0.9, -0.3, 0.4, 1.0]){
+          ctx.beginPath();
+          ctx.ellipse(px + s*0.37 + Math.cos(la)*s*0.3, py - s*1.0 + Math.sin(la)*s*0.16,
+                      s*0.34, s*0.1, la*0.5, 0, 7);
+          ctx.fill();
+        }
+      } else if(doneIdx === 9){ // вулкан: тлеющий конус
+        ctx.beginPath();
+        ctx.moveTo(px - s*0.6, py); ctx.lineTo(px - s*0.12, py - s*0.9);
+        ctx.lineTo(px + s*0.12, py - s*0.9); ctx.lineTo(px + s*0.6, py);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ff6a3a';
+        ctx.globalAlpha = 0.5 + 0.3*Math.sin(t*5 + px);
+        ctx.fillRect(px - s*0.1, py - s*0.92, s*0.2, s*0.07);
+        ctx.globalAlpha = 1;
+      } else { // остальные: валун в тонах биома
+        ctx.fillStyle = hexA(doneBiome.rock[0], 0.95);
+        ctx.beginPath();
+        ctx.moveTo(px - s*0.5, py); ctx.lineTo(px - s*0.3, py - s*0.5);
+        ctx.lineTo(px + s*0.16, py - s*0.62); ctx.lineTo(px + s*0.52, py - s*0.12);
+        ctx.lineTo(px + s*0.4, py); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = hexA(doneBiome.rock[1], 0.9);
+        ctx.beginPath();
+        ctx.moveTo(px - s*0.3, py - s*0.5); ctx.lineTo(px + s*0.16, py - s*0.62);
+        ctx.lineTo(px + s*0.1, py - s*0.3); ctx.closePath(); ctx.fill();
+      }
+    };
+    prop(W*0.12, groundY + (H-groundY)*0.33, 34);
+    prop(W*0.55, groundY + (H-groundY)*0.2, 24);
+    prop(W*0.93, groundY + (H-groundY)*0.5, 42);
+  }
+  // камни и обломки на земле
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  for(let i=0;i<10;i++){
+    ctx.beginPath();
+    ctx.ellipse(rnd(i+900)*W, groundY + 8 + rnd(i+910)*(H - groundY - 30),
+                5 + rnd(i+920)*14, 2.5 + rnd(i+930)*4, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // вражеская колонна на горизонте: во вступлении ползёт, в финале — надвигается
+  if(isIntro || (S.finale && t > 4.5)){
+    const k = S.finale ? Math.min(1, (t-4.5)/2) : 1;
+    const shift = isIntro ? (t*26) % 90 : (1-k)*140;
+    ctx.globalAlpha = (S.finale ? 0.6*k : 0.5);
+    for(let i=0;i<8;i++){
+      const cxk = W + 30 - i*78 - shift;
+      drawTankSide({ x: cxk, y: groundY - 13, dir:-1, trackPhase: shift },
+                   { ctx, hullColor:'#191d23', darkColor:'#0e1115', scale:0.55 });
+      // красный огонёк фары спереди
+      ctx.fillStyle = '#ff3b2f';
+      ctx.globalAlpha = (S.finale ? k : 0.8) * (0.55 + 0.45*Math.sin(t*5 + i));
+      ctx.beginPath(); ctx.arc(cxk - 22, groundY - 12, 2, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = (S.finale ? 0.6*k : 0.5);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if(isIntro){
+    // подбитый танк обороны догорает справа
+    const wx = W*0.78, wy = groundY + Math.min(60, H*0.1);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.ellipse(wx, wy + 16, 40, 8, 0, 0, Math.PI*2); ctx.fill();
+    firelight(wx, wy - 8, 110, 0.18 + 0.07*Math.sin(t*8.1));
+    drawTankSide({ x:wx, y:wy, dir:-1, tilt:0.1, barrelA:0.3 },
+                 { ctx, hullColor:'#3c444d', darkColor:'#1d2228', scale:0.95 });
+    for(let i=0;i<4;i++){
+      const ft = (t*1.5 + i*0.26) % 0.9;
+      ctx.globalAlpha = Math.max(0, 0.8 - ft);
+      ctx.fillStyle = i % 2 ? '#ff9f43' : '#ffd84d';
+      ctx.beginPath();
+      ctx.arc(wx - 6 + (i%2)*12 + Math.sin(t*6 + i)*2, wy - 18 - ft*34, 5 - ft*3.5, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // наш танк выезжает слева и встаёт: траки крутятся, пыль из-под гусениц
+  const sk = playerSkin();
+  const heroX = Math.min(W*0.38, -70 + t*170);
+  const heroY = groundY + Math.min(90, H*0.14);
+  const heroMoving = heroX < W*0.38 - 0.5;
+  const shotP = (t + 0.4) % 1.9; // фаза контрольного выстрела в главах
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; // контактная тень
+  ctx.beginPath(); ctx.ellipse(heroX, heroY + 20, 46, 10, 0, 0, Math.PI*2); ctx.fill();
+  if(heroMoving){
+    for(let i=0;i<5;i++){ // шлейф пыли позади
+      const dp = (t*1.4 + i*0.19) % 0.8;
+      ctx.globalAlpha = Math.max(0, 0.3 - dp*0.35);
+      ctx.fillStyle = '#8d8578';
+      ctx.beginPath();
+      ctx.arc(heroX - 42 - dp*46, heroY + 14 - dp*12 + Math.sin(i*3)*5, 5 + dp*9, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else {
+    for(let i=0;i<3;i++){ // выхлоп на холостых
+      const ep = (t*0.9 + i*0.37) % 1;
+      ctx.globalAlpha = Math.max(0, 0.25 - ep*0.25);
+      ctx.fillStyle = '#6a7076';
+      ctx.beginPath();
+      ctx.arc(heroX - 34 - ep*12, heroY - 20 - ep*26, 3.5 + ep*6, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  drawTankSide({ x:heroX, y:heroY, dir:1,
+                 trackPhase: (heroX + 70)*0.5,
+                 barrelA: S.bossDef ? -0.06 : 0,
+                 recoil: S.bossDef && shotP < 0.22 ? 1 - shotP/0.22 : 0 },
+               { ctx, hullColor:sk.hull, darkColor:sk.dark, scale:1.15, fx:sk.fx });
+  if(S.bossDef){ // тёплый отсвет пожара на корпусе героя
+    firelight(heroX + 26, heroY - 4, 60, 0.1 + 0.04*Math.sin(t*9));
+  }
+
+  if(S.finale){
+    // салют на полнеба
+    for(let i=0;i<9;i++){
+      const ft = (t*0.85 + i*0.31) % 1.5;
+      if(ft < 1){
+        const fx0 = 50 + (i*167.7) % Math.max(60, W-100);
+        const fy = bh + 20 + (i*83) % Math.max(40, groundY - bh - 70);
+        ctx.globalAlpha = 1 - ft;
+        ctx.strokeStyle = ['#f1c40f','#ff6b6b','#6fd9e8','#6fe58f','#f78fb3'][i%5];
+        ctx.lineWidth = 2.5;
+        for(let k2=0;k2<10;k2++){
+          const a = k2*Math.PI/5 + i;
+          ctx.beginPath();
+          ctx.moveTo(fx0 + Math.cos(a)*ft*30, fy + Math.sin(a)*ft*30);
+          ctx.lineTo(fx0 + Math.cos(a)*ft*62, fy + Math.sin(a)*ft*62);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+    // золотые искры опускаются
+    ctx.fillStyle = '#ffe08a';
+    for(let i=0;i<14;i++){
+      const et = (t*0.35 + i*0.21) % 1;
+      ctx.globalAlpha = 0.7*(1 - et);
+      ctx.beginPath();
+      ctx.arc((i*131.3) % W, bh + et*(groundY - bh), 1.8, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else if(S.bossDef){
+    // поверженный босс: его собственный облик, накренился, горит и искрит
+    const bx = W*0.72, by = heroY + 4;
+    const bd = S.bossDef;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.beginPath(); ctx.ellipse(bx, by + 30, 72, 14, 0, 0, Math.PI*2); ctx.fill();
+    firelight(bx, by - 10, 150, 0.2 + 0.07*Math.sin(t*9.3));
+    drawTankSide({ x:bx, y:by, dir:-1, tilt:-0.14, barrelA:0.38 },
+                 { ctx, hullColor:bd.hull, darkColor:bd.dark, scale:1.65 * (bd.hpMult > 1.2 ? 1.12 : 1),
+                   fx: bossSideFx(bd) });
+    if(bd.drones){ // его рой: сбитые дроны дымятся на земле, один ещё кружит подбитым
+      for(const [dx2, dy2, a2] of [[-110, 30, 0.5], [70, 40, -0.4]]){
+        ctx.save(); ctx.translate(bx + dx2, by + dy2); ctx.rotate(a2);
+        ctx.fillStyle = '#20252c'; ctx.fillRect(-12, -3, 24, 6);
+        ctx.fillRect(-16, -5, 8, 2); ctx.fillRect(8, -5, 8, 2);
+        ctx.restore();
+        ctx.globalAlpha = 0.4; ctx.fillStyle = '#3c444d';
+        ctx.beginPath(); ctx.arc(bx + dx2, by + dy2 - 14, 7, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      const ox = bx - 40 + Math.cos(t*1.3)*60, oy = by - 110 + Math.sin(t*2.6)*14;
+      ctx.save(); ctx.translate(ox, oy); ctx.rotate(Math.sin(t*5)*0.4);
+      ctx.fillStyle = bd.hull; ctx.fillRect(-11, -3, 22, 6);
+      ctx.fillStyle = '#20252c'; ctx.fillRect(-15, -6, 8, 2); ctx.fillRect(7, -6, 8, 2);
+      ctx.restore();
+    }
+    if(bd.spiral){ // шторм: остаточный заряд — дуги прыгают по всей броне, корпус в голубом ореоле
+      const fl = 0.5 + 0.5*Math.sin(t*23) * Math.sin(t*7.3);
+      const halo = ctx.createRadialGradient(bx, by - 6, 20, bx, by - 6, 120);
+      halo.addColorStop(0, 'rgba(120,190,255,' + (0.18 + 0.14*fl).toFixed(3) + ')');
+      halo.addColorStop(1, 'rgba(120,190,255,0)');
+      ctx.fillStyle = halo; ctx.fillRect(bx - 120, by - 126, 240, 240);
+      // опорные точки на силуэте брони: корма, башня, лоб, катки
+      const pts = [[-62, 4], [-40, -26], [-8, -32], [22, -24], [58, -6], [64, 10], [30, 26], [-30, 26]];
+      const seed = Math.floor(t*12); // дуги перескакивают ~12 раз в секунду
+      ctx.save();
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.shadowColor = '#7fc8ff'; ctx.shadowBlur = 14;
+      for(let i=0;i<4;i++){
+        if(rnd(seed*5 + i) < 0.3) continue; // часть разрядов гаснет — живое мерцание
+        const a = pts[Math.floor(rnd(seed*3 + i*11)*pts.length)];
+        const b2 = pts[Math.floor(rnd(seed*7 + i*13)*pts.length)];
+        if(a === b2) continue;
+        const path = [[bx + a[0], by + a[1]]];
+        for(let k=1;k<6;k++){ // ломаная с поперечным дрожанием
+          const q = k/6;
+          path.push([bx + a[0] + (b2[0]-a[0])*q + (rnd(seed + i*31 + k) - 0.5)*18,
+                     by + a[1] + (b2[1]-a[1])*q + (rnd(seed + i*37 + k + 5) - 0.5)*18]);
+        }
+        path.push([bx + b2[0], by + b2[1]]);
+        for(const [w, col] of [[5, 'rgba(110,180,255,0.55)'], [1.8, '#f2f9ff']]){ // синий ореол + белое ядро
+          ctx.strokeStyle = col; ctx.lineWidth = w;
+          ctx.beginPath(); ctx.moveTo(path[0][0], path[0][1]);
+          for(const pt of path.slice(1)) ctx.lineTo(pt[0], pt[1]);
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#e8f6ff'; // искры в точках удара
+        for(const pt of [path[0], path[path.length-1]]){ ctx.beginPath(); ctx.arc(pt[0], pt[1], 2.6, 0, Math.PI*2); ctx.fill(); }
+      }
+      ctx.restore();
+    }
+    // пламя
+    for(let i=0;i<6;i++){
+      const ft = (t*1.6 + i*0.23) % 0.9;
+      ctx.globalAlpha = Math.max(0, 0.85 - ft);
+      ctx.fillStyle = i % 2 ? '#ff9f43' : '#ffd84d';
+      ctx.beginPath();
+      ctx.arc(bx - 30 + (i%3)*24 + Math.sin(t*7+i)*3, by - 30 - ft*46, 7 - ft*5, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // дым над пламенем
+    for(let i=0;i<4;i++){
+      const st = (t*0.5 + i*0.33) % 1.5;
+      ctx.globalAlpha = Math.max(0, 0.45 - st*0.3);
+      ctx.fillStyle = '#3c444d';
+      ctx.beginPath();
+      ctx.arc(bx + 4 - st*20, by - 60 - st*70, 8 + st*16, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // внутри что-то взрывается: вспышки по корпусу
+    const bang = (t*0.9) % 1.7;
+    if(bang < 0.12){
+      ctx.globalAlpha = 1 - bang/0.12;
+      ctx.fillStyle = '#fff2cc';
+      ctx.beginPath();
+      ctx.arc(bx + Math.sin(t*13)*26, by - 8 + Math.cos(t*11)*14, 10, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    // герой контрольно постреливает в сторону босса
+    if(shotP < 0.1 && heroX > W*0.3){
+      ctx.strokeStyle = '#f1c40f';
+      ctx.globalAlpha = 1 - shotP/0.1;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(heroX + 52, heroY - 17);
+      ctx.lineTo(bx - 45, by - 18);
+      ctx.stroke();
+      ctx.fillStyle = '#ffe08a';
+      ctx.beginPath(); ctx.arc(heroX + 54, heroY - 17, 7, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // стелющийся туман перед сценой
+  ctx.fillStyle = '#9fb4c8';
+  for(let i=0;i<3;i++){
+    const fy = groundY + 26 + i*34;
+    const off = ((t*(9 + i*6) + rnd(i+40)*W) % (W + 560)) - 280;
+    ctx.globalAlpha = 0.045 + 0.02*i;
+    ctx.beginPath(); ctx.ellipse(off, fy, 280, 15 + i*5, 0, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // искры-угольки летят над полем боя
+  if(!S.finale){
+    ctx.fillStyle = '#ff9f43';
+    for(let i=0;i<14;i++){
+      const et = (t*0.2 + rnd(i+700)) % 1;
+      ctx.globalAlpha = 0.5*(1 - et)*(0.5 + 0.5*Math.sin(t*3.3 + i*1.7));
+      ctx.beginPath();
+      ctx.arc(rnd(i+800)*W + Math.sin(t*0.8 + i)*26, (H - bh) - et*(H - bh*2), 1.5, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // погода пройденного биома: снег, песок, пепел, искры вулкана
+  if(!isIntro && !S.finale){
+    for(let i=0;i<18;i++){
+      const wt = (t*0.16 + rnd(i+300)) % 1;
+      const wx2 = rnd(i+350)*W, wy2 = bh + wt*(H - bh*2);
+      if(doneIdx === 2 || doneIdx === 7){            // снег: хлопья вниз с покачиванием
+        ctx.fillStyle = '#eef6fb';
+        ctx.globalAlpha = 0.65*(1 - wt*0.4);
+        ctx.beginPath(); ctx.arc(wx2 + Math.sin(t*1.3 + i)*22, wy2, 1.6 + rnd(i)*1.4, 0, 7); ctx.fill();
+      } else if(doneIdx === 1){                       // пустыня: песок несёт вбок
+        ctx.strokeStyle = '#d9b36a'; ctx.lineWidth = 1.4;
+        ctx.globalAlpha = 0.4*(1 - wt*0.5);
+        const sx2 = (wx2 + t*160) % (W + 40) - 20;
+        ctx.beginPath(); ctx.moveTo(sx2, wy2); ctx.lineTo(sx2 - 13, wy2 + 3); ctx.stroke();
+      } else if(doneIdx === 6){                       // пепелище: серые хлопья
+        ctx.fillStyle = '#9a93a4';
+        ctx.globalAlpha = 0.5*(1 - wt*0.5);
+        ctx.beginPath(); ctx.arc(wx2 + Math.sin(t + i)*14, wy2, 1.5, 0, 7); ctx.fill();
+      } else if(doneIdx === 9){                       // вулкан: искры ВВЕРХ
+        ctx.fillStyle = i % 2 ? '#ff6a3a' : '#ffd84d';
+        ctx.globalAlpha = 0.7*(1 - wt);
+        ctx.beginPath(); ctx.arc(wx2, (H - bh) - wt*(H - bh*1.6), 1.8, 0, 7); ctx.fill();
+      } else if(doneIdx === 3){                       // болото: светлячки
+        if(i > 8) continue;
+        ctx.fillStyle = '#b8e986';
+        ctx.globalAlpha = 0.5*(0.4 + 0.6*Math.sin(t*2.2 + i*2.6));
+        ctx.beginPath();
+        ctx.arc(wx2, groundY + rnd(i+400)*(H - groundY)*0.8, 1.7, 0, 7); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore(); // конец кинокамеры
+}
+
 function render(){
   ctx.clearRect(0, 0, W, H);
 
@@ -3979,7 +4521,7 @@ function render(){
   // scenery
   for(const d of decor){
     ctx.save();
-    ctx.translate(d.x, d.y); ctx.rotate(d.kind === 'spec' ? 0 : d.a); ctx.scale(d.s, d.s);
+    ctx.translate(d.x, d.y); ctx.rotate(d.kind === 'spec' || d.kind === 'hedge' ? 0 : d.a); ctx.scale(d.s, d.s);
     if(d.kind === 'crater'){
       ctx.fillStyle = B.crater[0];
       ctx.beginPath(); ctx.ellipse(0, 0, 20, 14, 0, 0, Math.PI*2); ctx.fill();
@@ -3996,6 +4538,8 @@ function render(){
       for(const [bx,by,br] of [[-6,-2,7],[5,-5,6],[2,3,7]]){
         ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI*2); ctx.fill();
       }
+    } else if(d.kind === 'hedge'){
+      drawHedge(ctx, BI === 4 || BI === 9);
     } else if(d.kind === 'spec'){
       // фирменная деталь биома
       if(BI === 0){ // степь: пучки травы
@@ -4141,29 +4685,7 @@ function render(){
   ctx.globalAlpha = 1;
 
   // взрывные бочки
-  for(const bb of barrels){
-    ctx.save();
-    ctx.translate(bb.x, bb.y);
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.ellipse(2, 4, 11, 8, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#8a2420';
-    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#b3342a';
-    ctx.beginPath(); ctx.arc(-1.5, -1.5, 8, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#f6d32d'; ctx.lineWidth = 2.6; // предупредительное кольцо
-    ctx.beginPath(); ctx.arc(0, 0, 6.2, 0, Math.PI*2); ctx.stroke();
-    ctx.fillStyle = '#2b1410';
-    ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#ffffff40';
-    ctx.beginPath(); ctx.ellipse(-3, -3, 3.5, 2.2, -0.6, 0, Math.PI*2); ctx.fill();
-    if(bb.fuseT != null){ // фитиль горит!
-      ctx.globalAlpha = Math.sin(state.time*30) > 0 ? 0.9 : 0.2;
-      ctx.fillStyle = '#ffd84d';
-      ctx.beginPath(); ctx.arc(0, -13, 2.4, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    ctx.restore();
-  }
+  for(const bb of barrels) drawBarrel(ctx, bb.x, bb.y, bb.fuseT != null, state.time);
 
   for(const m of pickups) drawPickup(m);
 
@@ -4571,467 +5093,9 @@ function render(){
   // сюжетная заставка (кино: полосы, грозовое небо, луна, огонь)
   if(state.mode === 'story'){
     const t = story.t;
-    const bh = Math.min(64, H*0.1);          // киношные чёрные полосы
+    const bh = Math.min(64, H*0.1);
     const groundY = H*0.44;
-    const isIntro = !story.finale && !story.bossDef;
-    // декорации главы — ПРОЙДЕННЫЙ биом (на его земле и стоим);
-    // следующий проглядывает полосой у самого горизонта
-    const doneIdx = story.finale ? 9 : story.bossNum ? (story.bossNum - 1) % BIOMES.length : 0;
-    const doneBiome = BIOMES[doneIdx];
-    const nextBiome = story.bossNum ? BIOMES[story.bossNum % BIOMES.length] : BIOMES[0];
-    const theme = isIntro ? SCENE_THEMES[0] : SCENE_THEMES[doneIdx];
-    const hexA = (hex, a) => { // #rrggbb -> rgba
-      const n = parseInt(hex.slice(1), 16);
-      return 'rgba(' + (n>>16) + ',' + ((n>>8)&255) + ',' + (n&255) + ',' + a + ')';
-    };
-    const rnd = i => { const v = Math.sin(i*127.17 + 7.31)*43758.5453; return v - Math.floor(v); };
-    const firelight = (x,y,r,a) => { // тёплое пятно света от огня
-      const g = ctx.createRadialGradient(x, y, 4, x, y, r);
-      g.addColorStop(0, 'rgba(255,150,60,' + a + ')');
-      g.addColorStop(1, 'rgba(255,150,60,0)');
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = g; ctx.fillRect(x-r, y-r, r*2, r*2);
-      ctx.globalCompositeOperation = 'source-over';
-    };
-
-    // кинокамера: медленный наезд
-    ctx.save();
-    const zoom = 1 + Math.min(0.06, t*0.007);
-    ctx.translate(W/2, H*0.52); ctx.scale(zoom, zoom); ctx.translate(-W/2, -H*0.52);
-
-    // небо: глубокий градиент с багровым заревом у горизонта
-    const sky = ctx.createLinearGradient(0, 0, 0, groundY);
-    sky.addColorStop(0, theme.sky[0]);
-    sky.addColorStop(0.5, theme.sky[1]);
-    sky.addColorStop(0.82, theme.sky[2]);
-    sky.addColorStop(1, theme.sky[3]);
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, groundY);
-
-    // мерцающие звёзды
-    ctx.fillStyle = '#cfe0ff';
-    for(let i=0;i<34;i++){
-      ctx.globalAlpha = (0.15 + 0.5*rnd(i+200)) * (0.55 + 0.45*Math.sin(t*(1 + rnd(i+300)*2.5) + i*2.1));
-      ctx.fillRect(rnd(i)*W, rnd(i+100)*groundY*0.55, 1.7, 1.7);
-    }
-    ctx.globalAlpha = 1;
-
-    // светило темы: красная луна, мутное солнце пустыни, две луны сумрака...
-    drawSceneSun(ctx, theme.sun, t, W, groundY, bh);
-    if(theme.aurora) drawSceneAurora(ctx, theme.aurora, t, W, bh, groundY);
-
-    // тучи дрейфуют двумя слоями (ближний цепляет луну)
-    for(let L=0; L<2; L++){
-      ctx.fillStyle = L ? 'rgba(7,9,14,0.42)' : 'rgba(13,15,22,0.3)';
-      const spd = L ? 11 : 6, yy = bh + 14 + L*58;
-      for(let i=0;i<5;i++){
-        const cw = 150 + rnd(i + L*9)*190;
-        const cx2 = ((rnd(i + 40 + L*9)*(W + cw*2) + t*spd) % (W + cw*2)) - cw;
-        ctx.beginPath();
-        ctx.ellipse(cx2, yy + rnd(i + 60 + L*9)*30, cw, 13 + rnd(i + 70 + L*9)*9, 0, 0, Math.PI*2);
-        ctx.fill();
-      }
-    }
-
-    // молния: ломаная ветка + вспышка всего неба
-    const fseed = Math.floor(t*0.55), fphase = t*0.55 - fseed;
-    if(theme.storm && rnd(fseed + 500) > 0.6 && fphase < 0.16){
-      const fa = 1 - fphase/0.16;
-      ctx.fillStyle = 'rgba(220,228,255,' + (0.1*fa).toFixed(3) + ')';
-      ctx.fillRect(0, 0, W, groundY);
-      ctx.strokeStyle = 'rgba(235,240,255,' + (0.9*fa).toFixed(3) + ')';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      let lx = (0.12 + 0.5*rnd(fseed + 600))*W, ly = 0;
-      ctx.moveTo(lx, ly);
-      for(let i=1;i<=7;i++){
-        lx += (rnd(fseed*13 + i) - 0.5)*54;
-        ly = groundY*0.75*i/7;
-        ctx.lineTo(lx, ly);
-      }
-      ctx.stroke();
-    }
-
-    // горизонт: руины города в степи, у остальных биомов — свои силуэты
-    if(theme.horizon === 'ruins'){
-      for(let L=0; L<2; L++){
-        ctx.fillStyle = L ? '#0d1016' : '#161a23';
-        const base = groundY - (L ? 0 : 10);
-        let bx2 = -10, bi = L*37;
-        while(bx2 < W + 40){
-          const bw = 26 + rnd(bi)*46;
-          const bht = (L ? 26 : 14) + rnd(bi+1)*(L ? 64 : 34);
-          ctx.fillRect(bx2, base - bht, bw, bht);
-          if(rnd(bi+2) > 0.55){ // разрушенная верхушка
-            ctx.beginPath();
-            ctx.moveTo(bx2, base - bht);
-            ctx.lineTo(bx2 + bw*rnd(bi+3), base - bht - 8 - rnd(bi+4)*10);
-            ctx.lineTo(bx2 + bw, base - bht);
-            ctx.fill();
-          }
-          if(L && rnd(bi+5) > 0.8){
-            ctx.fillStyle = 'rgba(255,140,60,' + (0.3 + 0.3*Math.sin(t*3 + bi)).toFixed(3) + ')';
-            ctx.fillRect(bx2 + bw*0.3, base - bht*0.55, 2.5, 3.5);
-            ctx.fillStyle = L ? '#0d1016' : '#161a23';
-          }
-          bx2 += bw + 4 + rnd(bi+6)*26;
-          bi += 7;
-        }
-      }
-    } else drawSceneHorizon(ctx, theme.horizon, t, W, groundY, rnd);
-
-    // зарево у горизонта в тонах пройденного биома — главы различаются с порога
-    const tint = ctx.createLinearGradient(0, bh, 0, groundY);
-    tint.addColorStop(0, 'rgba(0,0,0,0)');
-    tint.addColorStop(1, hexA(doneBiome.bush[1], isIntro ? 0.12 : 0.3));
-    ctx.fillStyle = tint;
-    ctx.fillRect(0, bh, W, groundY - bh);
-
-    // земля: цвета ПРОЙДЕННОГО биома; у кромки — полоса следующего («что впереди»)
-    const gr = ctx.createLinearGradient(0, groundY, 0, H);
-    gr.addColorStop(0, doneBiome.grid);
-    gr.addColorStop(0.3, doneBiome.ground);
-    gr.addColorStop(1, '#0a0c0f');
-    ctx.fillStyle = gr;
-    ctx.fillRect(0, groundY, W, H - groundY);
-    ctx.fillStyle = hexA(nextBiome.bush[1], 0.5);
-    ctx.fillRect(0, groundY, W, 5);
-    ctx.fillStyle = '#ffffff1a';
-    ctx.fillRect(0, groundY, W, 2);
-
-    // приметы пройденного биома на земле: силуэты между героем и горизонтом
-    if(!isIntro){
-      const prop = (px, py, s) => {
-        ctx.fillStyle = hexA(doneBiome.bush[0], 0.9);
-        ctx.strokeStyle = hexA(doneBiome.bush[1], 0.9);
-        ctx.lineWidth = Math.max(2, s*0.16);
-        if(doneIdx === 1){ // пустыня: кактус
-          ctx.beginPath(); ctx.roundRect(px - s*0.14, py - s, s*0.28, s, s*0.14); ctx.fill();
-          ctx.beginPath(); ctx.roundRect(px - s*0.52, py - s*0.74, s*0.38, s*0.2, s*0.1); ctx.fill();
-          ctx.beginPath(); ctx.roundRect(px - s*0.52, py - s*0.95, s*0.18, s*0.38, s*0.09); ctx.fill();
-          ctx.beginPath(); ctx.roundRect(px + s*0.14, py - s*0.6, s*0.38, s*0.2, s*0.1); ctx.fill();
-        } else if(doneIdx === 2 || doneIdx === 7){ // снега/ледник: ель в снегу
-          ctx.beginPath();
-          ctx.moveTo(px, py - s*1.15); ctx.lineTo(px + s*0.46, py - s*0.28);
-          ctx.lineTo(px - s*0.46, py - s*0.28); ctx.closePath(); ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(px, py - s*0.84); ctx.lineTo(px + s*0.58, py);
-          ctx.lineTo(px - s*0.58, py); ctx.closePath(); ctx.fill();
-          ctx.fillStyle = '#e8f2f8cc'; // снежная шапка
-          ctx.beginPath(); ctx.ellipse(px, py - s*1.08, s*0.16, s*0.07, 0, 0, 7); ctx.fill();
-        } else if(doneIdx === 5){ // джунгли: пальма
-          ctx.beginPath(); ctx.moveTo(px - s*0.08, py);
-          ctx.quadraticCurveTo(px + s*0.1, py - s*0.6, px + s*0.3, py - s*1.02);
-          ctx.lineTo(px + s*0.44, py - s*0.96);
-          ctx.quadraticCurveTo(px + s*0.22, py - s*0.55, px + s*0.12, py);
-          ctx.closePath(); ctx.fill();
-          for(const la of [-0.9, -0.3, 0.4, 1.0]){
-            ctx.beginPath();
-            ctx.ellipse(px + s*0.37 + Math.cos(la)*s*0.3, py - s*1.0 + Math.sin(la)*s*0.16,
-                        s*0.34, s*0.1, la*0.5, 0, 7);
-            ctx.fill();
-          }
-        } else if(doneIdx === 9){ // вулкан: тлеющий конус
-          ctx.beginPath();
-          ctx.moveTo(px - s*0.6, py); ctx.lineTo(px - s*0.12, py - s*0.9);
-          ctx.lineTo(px + s*0.12, py - s*0.9); ctx.lineTo(px + s*0.6, py);
-          ctx.closePath(); ctx.fill();
-          ctx.fillStyle = '#ff6a3a';
-          ctx.globalAlpha = 0.5 + 0.3*Math.sin(t*5 + px);
-          ctx.fillRect(px - s*0.1, py - s*0.92, s*0.2, s*0.07);
-          ctx.globalAlpha = 1;
-        } else { // остальные: валун в тонах биома
-          ctx.fillStyle = hexA(doneBiome.rock[0], 0.95);
-          ctx.beginPath();
-          ctx.moveTo(px - s*0.5, py); ctx.lineTo(px - s*0.3, py - s*0.5);
-          ctx.lineTo(px + s*0.16, py - s*0.62); ctx.lineTo(px + s*0.52, py - s*0.12);
-          ctx.lineTo(px + s*0.4, py); ctx.closePath(); ctx.fill();
-          ctx.fillStyle = hexA(doneBiome.rock[1], 0.9);
-          ctx.beginPath();
-          ctx.moveTo(px - s*0.3, py - s*0.5); ctx.lineTo(px + s*0.16, py - s*0.62);
-          ctx.lineTo(px + s*0.1, py - s*0.3); ctx.closePath(); ctx.fill();
-        }
-      };
-      prop(W*0.12, groundY + (H-groundY)*0.33, 34);
-      prop(W*0.55, groundY + (H-groundY)*0.2, 24);
-      prop(W*0.93, groundY + (H-groundY)*0.5, 42);
-    }
-    // камни и обломки на земле
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    for(let i=0;i<10;i++){
-      ctx.beginPath();
-      ctx.ellipse(rnd(i+900)*W, groundY + 8 + rnd(i+910)*(H - groundY - 30),
-                  5 + rnd(i+920)*14, 2.5 + rnd(i+930)*4, 0, 0, Math.PI*2);
-      ctx.fill();
-    }
-
-    // вражеская колонна на горизонте: во вступлении ползёт, в финале — надвигается
-    if(isIntro || (story.finale && t > 4.5)){
-      const k = story.finale ? Math.min(1, (t-4.5)/2) : 1;
-      const shift = isIntro ? (t*26) % 90 : (1-k)*140;
-      ctx.globalAlpha = (story.finale ? 0.6*k : 0.5);
-      for(let i=0;i<8;i++){
-        const cxk = W + 30 - i*78 - shift;
-        drawTankSide({ x: cxk, y: groundY - 13, dir:-1, trackPhase: shift },
-                     { hullColor:'#191d23', darkColor:'#0e1115', scale:0.55 });
-        // красный огонёк фары спереди
-        ctx.fillStyle = '#ff3b2f';
-        ctx.globalAlpha = (story.finale ? k : 0.8) * (0.55 + 0.45*Math.sin(t*5 + i));
-        ctx.beginPath(); ctx.arc(cxk - 22, groundY - 12, 2, 0, Math.PI*2); ctx.fill();
-        ctx.globalAlpha = (story.finale ? 0.6*k : 0.5);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    if(isIntro){
-      // подбитый танк обороны догорает справа
-      const wx = W*0.78, wy = groundY + Math.min(60, H*0.1);
-      ctx.fillStyle = 'rgba(0,0,0,0.45)';
-      ctx.beginPath(); ctx.ellipse(wx, wy + 16, 40, 8, 0, 0, Math.PI*2); ctx.fill();
-      firelight(wx, wy - 8, 110, 0.18 + 0.07*Math.sin(t*8.1));
-      drawTankSide({ x:wx, y:wy, dir:-1, tilt:0.1, barrelA:0.3 },
-                   { hullColor:'#3c444d', darkColor:'#1d2228', scale:0.95 });
-      for(let i=0;i<4;i++){
-        const ft = (t*1.5 + i*0.26) % 0.9;
-        ctx.globalAlpha = Math.max(0, 0.8 - ft);
-        ctx.fillStyle = i % 2 ? '#ff9f43' : '#ffd84d';
-        ctx.beginPath();
-        ctx.arc(wx - 6 + (i%2)*12 + Math.sin(t*6 + i)*2, wy - 18 - ft*34, 5 - ft*3.5, 0, Math.PI*2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // наш танк выезжает слева и встаёт: траки крутятся, пыль из-под гусениц
-    const sk = playerSkin();
-    const heroX = Math.min(W*0.38, -70 + t*170);
-    const heroY = groundY + Math.min(90, H*0.14);
-    const heroMoving = heroX < W*0.38 - 0.5;
-    const shotP = (t + 0.4) % 1.9; // фаза контрольного выстрела в главах
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'; // контактная тень
-    ctx.beginPath(); ctx.ellipse(heroX, heroY + 20, 46, 10, 0, 0, Math.PI*2); ctx.fill();
-    if(heroMoving){
-      for(let i=0;i<5;i++){ // шлейф пыли позади
-        const dp = (t*1.4 + i*0.19) % 0.8;
-        ctx.globalAlpha = Math.max(0, 0.3 - dp*0.35);
-        ctx.fillStyle = '#8d8578';
-        ctx.beginPath();
-        ctx.arc(heroX - 42 - dp*46, heroY + 14 - dp*12 + Math.sin(i*3)*5, 5 + dp*9, 0, Math.PI*2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    } else {
-      for(let i=0;i<3;i++){ // выхлоп на холостых
-        const ep = (t*0.9 + i*0.37) % 1;
-        ctx.globalAlpha = Math.max(0, 0.25 - ep*0.25);
-        ctx.fillStyle = '#6a7076';
-        ctx.beginPath();
-        ctx.arc(heroX - 34 - ep*12, heroY - 20 - ep*26, 3.5 + ep*6, 0, Math.PI*2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    }
-    drawTankSide({ x:heroX, y:heroY, dir:1,
-                   trackPhase: (heroX + 70)*0.5,
-                   barrelA: story.bossDef ? -0.06 : 0,
-                   recoil: story.bossDef && shotP < 0.22 ? 1 - shotP/0.22 : 0 },
-                 { hullColor:sk.hull, darkColor:sk.dark, scale:1.15, fx:sk.fx });
-    if(story.bossDef){ // тёплый отсвет пожара на корпусе героя
-      firelight(heroX + 26, heroY - 4, 60, 0.1 + 0.04*Math.sin(t*9));
-    }
-
-    if(story.finale){
-      // салют на полнеба
-      for(let i=0;i<9;i++){
-        const ft = (t*0.85 + i*0.31) % 1.5;
-        if(ft < 1){
-          const fx0 = 50 + (i*167.7) % Math.max(60, W-100);
-          const fy = bh + 20 + (i*83) % Math.max(40, groundY - bh - 70);
-          ctx.globalAlpha = 1 - ft;
-          ctx.strokeStyle = ['#f1c40f','#ff6b6b','#6fd9e8','#6fe58f','#f78fb3'][i%5];
-          ctx.lineWidth = 2.5;
-          for(let k2=0;k2<10;k2++){
-            const a = k2*Math.PI/5 + i;
-            ctx.beginPath();
-            ctx.moveTo(fx0 + Math.cos(a)*ft*30, fy + Math.sin(a)*ft*30);
-            ctx.lineTo(fx0 + Math.cos(a)*ft*62, fy + Math.sin(a)*ft*62);
-            ctx.stroke();
-          }
-          ctx.globalAlpha = 1;
-        }
-      }
-      // золотые искры опускаются
-      ctx.fillStyle = '#ffe08a';
-      for(let i=0;i<14;i++){
-        const et = (t*0.35 + i*0.21) % 1;
-        ctx.globalAlpha = 0.7*(1 - et);
-        ctx.beginPath();
-        ctx.arc((i*131.3) % W, bh + et*(groundY - bh), 1.8, 0, Math.PI*2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    } else if(story.bossDef){
-      // поверженный босс: его собственный облик, накренился, горит и искрит
-      const bx = W*0.72, by = heroY + 4;
-      const bd = story.bossDef;
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.beginPath(); ctx.ellipse(bx, by + 30, 72, 14, 0, 0, Math.PI*2); ctx.fill();
-      firelight(bx, by - 10, 150, 0.2 + 0.07*Math.sin(t*9.3));
-      drawTankSide({ x:bx, y:by, dir:-1, tilt:-0.14, barrelA:0.38 },
-                   { hullColor:bd.hull, darkColor:bd.dark, scale:1.65 * (bd.hpMult > 1.2 ? 1.12 : 1),
-                     fx: bossSideFx(bd) });
-      if(bd.drones){ // его рой: сбитые дроны дымятся на земле, один ещё кружит подбитым
-        for(const [dx2, dy2, a2] of [[-110, 30, 0.5], [70, 40, -0.4]]){
-          ctx.save(); ctx.translate(bx + dx2, by + dy2); ctx.rotate(a2);
-          ctx.fillStyle = '#20252c'; ctx.fillRect(-12, -3, 24, 6);
-          ctx.fillRect(-16, -5, 8, 2); ctx.fillRect(8, -5, 8, 2);
-          ctx.restore();
-          ctx.globalAlpha = 0.4; ctx.fillStyle = '#3c444d';
-          ctx.beginPath(); ctx.arc(bx + dx2, by + dy2 - 14, 7, 0, Math.PI*2); ctx.fill();
-          ctx.globalAlpha = 1;
-        }
-        const ox = bx - 40 + Math.cos(t*1.3)*60, oy = by - 110 + Math.sin(t*2.6)*14;
-        ctx.save(); ctx.translate(ox, oy); ctx.rotate(Math.sin(t*5)*0.4);
-        ctx.fillStyle = bd.hull; ctx.fillRect(-11, -3, 22, 6);
-        ctx.fillStyle = '#20252c'; ctx.fillRect(-15, -6, 8, 2); ctx.fillRect(7, -6, 8, 2);
-        ctx.restore();
-      }
-      if(bd.spiral){ // шторм: остаточный заряд — дуги прыгают по всей броне, корпус в голубом ореоле
-        const fl = 0.5 + 0.5*Math.sin(t*23) * Math.sin(t*7.3);
-        const halo = ctx.createRadialGradient(bx, by - 6, 20, bx, by - 6, 120);
-        halo.addColorStop(0, 'rgba(120,190,255,' + (0.18 + 0.14*fl).toFixed(3) + ')');
-        halo.addColorStop(1, 'rgba(120,190,255,0)');
-        ctx.fillStyle = halo; ctx.fillRect(bx - 120, by - 126, 240, 240);
-        // опорные точки на силуэте брони: корма, башня, лоб, катки
-        const pts = [[-62, 4], [-40, -26], [-8, -32], [22, -24], [58, -6], [64, 10], [30, 26], [-30, 26]];
-        const seed = Math.floor(t*12); // дуги перескакивают ~12 раз в секунду
-        ctx.save();
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        ctx.shadowColor = '#7fc8ff'; ctx.shadowBlur = 14;
-        for(let i=0;i<4;i++){
-          if(rnd(seed*5 + i) < 0.3) continue; // часть разрядов гаснет — живое мерцание
-          const a = pts[Math.floor(rnd(seed*3 + i*11)*pts.length)];
-          const b2 = pts[Math.floor(rnd(seed*7 + i*13)*pts.length)];
-          if(a === b2) continue;
-          const path = [[bx + a[0], by + a[1]]];
-          for(let k=1;k<6;k++){ // ломаная с поперечным дрожанием
-            const q = k/6;
-            path.push([bx + a[0] + (b2[0]-a[0])*q + (rnd(seed + i*31 + k) - 0.5)*18,
-                       by + a[1] + (b2[1]-a[1])*q + (rnd(seed + i*37 + k + 5) - 0.5)*18]);
-          }
-          path.push([bx + b2[0], by + b2[1]]);
-          for(const [w, col] of [[5, 'rgba(110,180,255,0.55)'], [1.8, '#f2f9ff']]){ // синий ореол + белое ядро
-            ctx.strokeStyle = col; ctx.lineWidth = w;
-            ctx.beginPath(); ctx.moveTo(path[0][0], path[0][1]);
-            for(const pt of path.slice(1)) ctx.lineTo(pt[0], pt[1]);
-            ctx.stroke();
-          }
-          ctx.fillStyle = '#e8f6ff'; // искры в точках удара
-          for(const pt of [path[0], path[path.length-1]]){ ctx.beginPath(); ctx.arc(pt[0], pt[1], 2.6, 0, Math.PI*2); ctx.fill(); }
-        }
-        ctx.restore();
-      }
-      // пламя
-      for(let i=0;i<6;i++){
-        const ft = (t*1.6 + i*0.23) % 0.9;
-        ctx.globalAlpha = Math.max(0, 0.85 - ft);
-        ctx.fillStyle = i % 2 ? '#ff9f43' : '#ffd84d';
-        ctx.beginPath();
-        ctx.arc(bx - 30 + (i%3)*24 + Math.sin(t*7+i)*3, by - 30 - ft*46, 7 - ft*5, 0, Math.PI*2);
-        ctx.fill();
-      }
-      // дым над пламенем
-      for(let i=0;i<4;i++){
-        const st = (t*0.5 + i*0.33) % 1.5;
-        ctx.globalAlpha = Math.max(0, 0.45 - st*0.3);
-        ctx.fillStyle = '#3c444d';
-        ctx.beginPath();
-        ctx.arc(bx + 4 - st*20, by - 60 - st*70, 8 + st*16, 0, Math.PI*2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      // внутри что-то взрывается: вспышки по корпусу
-      const bang = (t*0.9) % 1.7;
-      if(bang < 0.12){
-        ctx.globalAlpha = 1 - bang/0.12;
-        ctx.fillStyle = '#fff2cc';
-        ctx.beginPath();
-        ctx.arc(bx + Math.sin(t*13)*26, by - 8 + Math.cos(t*11)*14, 10, 0, Math.PI*2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-      // герой контрольно постреливает в сторону босса
-      if(shotP < 0.1 && heroX > W*0.3){
-        ctx.strokeStyle = '#f1c40f';
-        ctx.globalAlpha = 1 - shotP/0.1;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(heroX + 52, heroY - 17);
-        ctx.lineTo(bx - 45, by - 18);
-        ctx.stroke();
-        ctx.fillStyle = '#ffe08a';
-        ctx.beginPath(); ctx.arc(heroX + 54, heroY - 17, 7, 0, Math.PI*2); ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    // стелющийся туман перед сценой
-    ctx.fillStyle = '#9fb4c8';
-    for(let i=0;i<3;i++){
-      const fy = groundY + 26 + i*34;
-      const off = ((t*(9 + i*6) + rnd(i+40)*W) % (W + 560)) - 280;
-      ctx.globalAlpha = 0.045 + 0.02*i;
-      ctx.beginPath(); ctx.ellipse(off, fy, 280, 15 + i*5, 0, 0, Math.PI*2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // искры-угольки летят над полем боя
-    if(!story.finale){
-      ctx.fillStyle = '#ff9f43';
-      for(let i=0;i<14;i++){
-        const et = (t*0.2 + rnd(i+700)) % 1;
-        ctx.globalAlpha = 0.5*(1 - et)*(0.5 + 0.5*Math.sin(t*3.3 + i*1.7));
-        ctx.beginPath();
-        ctx.arc(rnd(i+800)*W + Math.sin(t*0.8 + i)*26, (H - bh) - et*(H - bh*2), 1.5, 0, Math.PI*2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // погода пройденного биома: снег, песок, пепел, искры вулкана
-    if(!isIntro && !story.finale){
-      for(let i=0;i<18;i++){
-        const wt = (t*0.16 + rnd(i+300)) % 1;
-        const wx2 = rnd(i+350)*W, wy2 = bh + wt*(H - bh*2);
-        if(doneIdx === 2 || doneIdx === 7){            // снег: хлопья вниз с покачиванием
-          ctx.fillStyle = '#eef6fb';
-          ctx.globalAlpha = 0.65*(1 - wt*0.4);
-          ctx.beginPath(); ctx.arc(wx2 + Math.sin(t*1.3 + i)*22, wy2, 1.6 + rnd(i)*1.4, 0, 7); ctx.fill();
-        } else if(doneIdx === 1){                       // пустыня: песок несёт вбок
-          ctx.strokeStyle = '#d9b36a'; ctx.lineWidth = 1.4;
-          ctx.globalAlpha = 0.4*(1 - wt*0.5);
-          const sx2 = (wx2 + t*160) % (W + 40) - 20;
-          ctx.beginPath(); ctx.moveTo(sx2, wy2); ctx.lineTo(sx2 - 13, wy2 + 3); ctx.stroke();
-        } else if(doneIdx === 6){                       // пепелище: серые хлопья
-          ctx.fillStyle = '#9a93a4';
-          ctx.globalAlpha = 0.5*(1 - wt*0.5);
-          ctx.beginPath(); ctx.arc(wx2 + Math.sin(t + i)*14, wy2, 1.5, 0, 7); ctx.fill();
-        } else if(doneIdx === 9){                       // вулкан: искры ВВЕРХ
-          ctx.fillStyle = i % 2 ? '#ff6a3a' : '#ffd84d';
-          ctx.globalAlpha = 0.7*(1 - wt);
-          ctx.beginPath(); ctx.arc(wx2, (H - bh) - wt*(H - bh*1.6), 1.8, 0, 7); ctx.fill();
-        } else if(doneIdx === 3){                       // болото: светлячки
-          if(i > 8) continue;
-          ctx.fillStyle = '#b8e986';
-          ctx.globalAlpha = 0.5*(0.4 + 0.6*Math.sin(t*2.2 + i*2.6));
-          ctx.beginPath();
-          ctx.arc(wx2, groundY + rnd(i+400)*(H - groundY)*0.8, 1.7, 0, 7); ctx.fill();
-        }
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    ctx.restore(); // конец кинокамеры
+    drawStoryScene(ctx, W, H, t, story);
 
     // виньетка поверх сцены
     if(vig) ctx.drawImage(vig, 0, 0, W, H);
@@ -5584,37 +5648,25 @@ $('boardBack').addEventListener('click', ()=>{ updateMenuBest(); setOverlay('men
 // побеждён босс n, если игрок дошёл до волны 10n+1; финал — кампания пройдена
 function bossesBeaten(){ return Math.max(0, Math.min(9, Math.floor(((profile.bestWave|0) - 1) / 10))); }
 function finaleBeaten(){ return (profile.bestWave|0) > 100 || checkpoint >= 101; }
+// миниатюра = настоящий кадр кино-главы: рисуем сцену в «мировом» размере
+// на отдельном холсте и ужимаем в карточку (одинаковый кадр на любом экране)
+let albumScene = null;
 function drawAlbumCard(cv, n){
+  const SW = 760, SH = 520;                       // мир кадра: пропорции как у телефона в ландшафте
+  if(!albumScene){ albumScene = document.createElement('canvas'); albumScene.width = SW; albumScene.height = SH; }
+  const sc = albumScene.getContext('2d');
+  sc.setTransform(1,0,0,1,0,0);
+  sc.clearRect(0, 0, SW, SH);
+  const S = n <= 9 ? { finale:false, bossDef: BOSS_DEFS[n-1], bossNum: n }
+                   : { finale:true, bossDef:null, bossNum:0 };
+  drawStoryScene(sc, SW, SH, n <= 9 ? 5.2 : 7.5, S); // момент, когда генерал горит, а финальная колонна уже вышла
   const c = cv.getContext('2d'), w = cv.width, h = cv.height;
-  const B = BIOMES[(n - 1) % BIOMES.length];
-  const gy = h*0.58;
-  const sky = c.createLinearGradient(0, 0, 0, gy);
-  sky.addColorStop(0, '#05070c'); sky.addColorStop(1, B.bush[1]);
-  c.fillStyle = sky; c.fillRect(0, 0, w, gy);
-  c.fillStyle = '#ffd8a0'; // луна
-  c.beginPath(); c.arc(w*0.82, h*0.18, h*0.07, 0, 7); c.fill();
-  const gr = c.createLinearGradient(0, gy, 0, h);
-  gr.addColorStop(0, B.grid); gr.addColorStop(1, '#0a0c0f');
-  c.fillStyle = gr; c.fillRect(0, gy, w, h - gy);
-  if(n <= 9){
-    const d = BOSS_DEFS[n - 1];
-    drawTankSide({ x: w*0.52, y: gy + h*0.16, dir: -1, tilt: -0.14, barrelA: 0.38 },
-                 { ctx: c, hullColor: d.hull, darkColor: d.dark, scale: h/115,
-                   fx: { pattern: d.fx.pattern, antenna: d.fx.antenna, eyeColor: d.fx.eyeColor } });
-    c.fillStyle = 'rgba(60,64,72,0.5)'; // дымок
-    for(let i=0;i<3;i++){ c.beginPath(); c.arc(w*0.5 - i*4, gy - h*0.05 - i*h*0.09, h*0.05 + i*h*0.025, 0, 7); c.fill(); }
-  } else { // финал: салют над полем
-    const cols = ['#f1c40f','#ff6b6b','#6fd9e8','#6fe58f'];
-    for(let i=0;i<4;i++){
-      c.strokeStyle = cols[i]; c.lineWidth = 2;
-      const fx0 = w*(0.2 + i*0.2), fy = h*(0.2 + (i%2)*0.14);
-      for(let k=0;k<8;k++){
-        const a = k*Math.PI/4;
-        c.beginPath(); c.moveTo(fx0 + Math.cos(a)*5, fy + Math.sin(a)*5);
-        c.lineTo(fx0 + Math.cos(a)*14, fy + Math.sin(a)*14); c.stroke();
-      }
-    }
-  }
+  // кадр «на двоих»: от светила до земли под танками, по центру между героем и генералом
+  const ch = SH*0.52, cw = ch * w / h, cy0 = SH*0.16, cx0 = SW*0.55 - cw/2;
+  c.drawImage(albumScene, cx0, cy0, cw, ch, 0, 0, w, h);
+  const vg = c.createRadialGradient(w/2, h*0.55, h*0.35, w/2, h*0.55, w*0.7); // лёгкая «фото»-виньетка
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+  c.fillStyle = vg; c.fillRect(0, 0, w, h);
 }
 function renderAlbum(){
   const grid = $('albumGrid'); grid.innerHTML = '';
@@ -5624,7 +5676,7 @@ function renderAlbum(){
     const card = document.createElement('button');
     card.className = 'albumcard' + (open ? '' : ' locked');
     const cv = document.createElement('canvas');
-    cv.width = 220; cv.height = 130;
+    cv.width = 330; cv.height = 195; // ×1.5 к размеру карточки — чётко на телефоне
     card.append(cv);
     const cap = document.createElement('span');
     cap.textContent = open

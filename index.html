@@ -369,7 +369,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v98';
+const GAME_VERSION = 'v99';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -378,7 +378,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 // «камера выше» на телефоне: мир на 25% больше экрана, рисуем мельче —
 // обзор и простор для манёвра как на мониторе; экранные координаты
 // пальца/мыши переводятся в мировые через toWorld()
-const VIEW_SCALE = IS_TOUCH ? 0.8 : 1;
+const VIEW_SCALE = IS_TOUCH ? 1/1.2 : 1; // +20% обзора (было +25%, тестеры: «ближе было уютнее»)
 const toWorld = v => v / VIEW_SCALE;
 
 // ---------- платформа: web / Яндекс Игры / VK (Mail) ----------

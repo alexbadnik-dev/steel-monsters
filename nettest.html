@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Проверка связи</title>
+<style>
+:root{--bg:#101820;--ink:#e8eef2;--dim:#93a1ad;--ok:#6fe58f;--bad:#ff7b6b}
+body{margin:0;padding:16px;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif}
+h1{font-size:20px;margin:0 0 8px} p{color:var(--dim);margin:0 0 14px}
+.row{padding:10px 12px;border-radius:10px;background:#18232d;margin:8px 0}
+.ok{color:var(--ok)} .bad{color:var(--bad)} button{font:inherit;padding:10px 16px;border-radius:10px;border:0;background:#2e7d4f;color:#fff}
+</style></head><body>
+<h1>Проверка связи с облаком «Жестянок»</h1>
+<p>Открой на телефоне с мобильным интернетом (без Wi-Fi и VPN), дождись трёх строк и пришли скриншот.</p>
+<button id="go">Проверить ещё раз</button>
+<div id="out"></div>
+<script>
+const URL = 'https://rlgqylywmbkwaojsgsty.supabase.co', KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsZ3F5bHl3bWJrd2FvanNnc3R5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzM3NzEsImV4cCI6MjEwNjU0OTc3MX0.roJLpsi6topofBTuq9kHpM4bJ33pSGXX4Y-IDu5LqU0';
+const tests = [
+  ['1. Маленький запрос (3 имени)', '/rest/v1/scores?select=name&limit=3'],
+  ['2. Рейтинг МИР (как в игре)', '/rest/v1/scores?select=name,score,wave,tank,diff,cups,secs&order=cups.desc,score.desc&limit=100'],
+  ['3. Большой запрос (все профили)', '/rest/v1/profiles?select=name,data&limit=300'],
+];
+async function run(){
+  const out = document.getElementById('out'); out.innerHTML = '';
+  for(const [name, path] of tests){
+    const row = document.createElement('div'); row.className = 'row'; row.textContent = name + ' — ждём…'; out.append(row);
+    const t0 = performance.now(), ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 12000);
+    try{
+      const r = await fetch(URL + path + '&_=' + Date.now(), { headers: { apikey: KEY, Authorization: 'Bearer ' + KEY }, signal: ctl.signal, cache: 'no-store' });
+      const txt = await r.text();
+      row.innerHTML = name + ' — <b class="ok">✓ ' + r.status + '</b> · ' + (new Blob([txt]).size/1024).toFixed(1) + ' КБ · ' + Math.round(performance.now() - t0) + ' мс';
+    }catch(e){
+      row.innerHTML = name + ' — <b class="bad">✗ ' + (e.name === 'AbortError' ? 'завис (12 с)' : e.message) + '</b>';
+    }
+    clearTimeout(to);
+  }
+  const ua = document.createElement('p'); ua.textContent = navigator.userAgent; out.append(ua);
+}
+document.getElementById('go').onclick = run; run();
+</script></body></html>

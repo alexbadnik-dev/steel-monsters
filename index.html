@@ -5744,19 +5744,34 @@ function agoText(ts){
   const d = Math.floor(h / 24);
   return d + ' дн назад';
 }
+// ШТАБ качает только нужные поля и порциями: на мобильном интернете соединение с зарубежным
+// сервером «замерзает» после ~16 КБ — маленькие запросы проходят, большие висят до таймаута
+async function fetchPaged(path, page){
+  const out = [];
+  for(let off = 0; off < 2000; off += page){
+    const r = await fetchT(ONLINE.url + path + '&limit=' + page + '&offset=' + off,
+      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
+    if(!r.ok) throw new Error('http ' + r.status);
+    const part = await r.json();
+    out.push(...part);
+    if(part.length < page) break;
+  }
+  return out;
+}
 async function showHQ(){
   if(!onlineEnabled()){ gAlert('ШТАБ', 'Онлайн выключен.'); return; }
   let rows = [];
   try{
-    const r = await fetchT(ONLINE.url + '/rest/v1/profiles?select=name,data&limit=300',
-      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
-    rows = r.ok ? await r.json() : [];
+    const lite = await fetchPaged('/rest/v1/profiles?select=name,dn:data->>name,seen:data->seen,plat:data->>plat,'
+      + 'ver:data->>ver,battles:data->battles,bw:data->bestWave,coins:data->coins&order=name', 40);
+    rows = lite.map(r => ({ name: r.name, data: { name: r.dn, seen: r.seen, plat: r.plat, ver: r.ver,
+                                                  battles: r.battles, bestWave: r.bw, coins: r.coins } }));
   }catch(e){ gAlert('ШТАБ', 'Нет связи с облаком — сводка недоступна.'); return; }
   let devs = []; // учёт устройств (включая молчунов без имени); таблицы может ещё не быть
   try{
-    const rd = await fetchT(ONLINE.url + '/rest/v1/devices?select=id,data&limit=500',
-      { headers: { apikey: ONLINE.key, Authorization: 'Bearer ' + ONLINE.key } }, 10000);
-    devs = rd.ok ? await rd.json() : [];
+    const lite = await fetchPaged('/rest/v1/devices?select=id,named:data->named,last:data->last,'
+      + 'plat:data->>plat,ver:data->>ver&order=id', 100);
+    devs = lite.map(v => ({ id: v.id, data: { named: v.named, last: v.last, plat: v.plat, ver: v.ver } }));
   }catch(e){}
   if(!rows.length && !devs.length){ gAlert('ШТАБ', 'В облаке пока ни одного бойца.'); return; }
   const num = n => (n|0).toLocaleString('ru-RU');

@@ -23,7 +23,7 @@ local TOTAL_WAVES = 100
 local PLAYER_SHOT = { dmg = 15, cooldown = 0.24, speed = 56 }
 
 -- враги: hp, скорость (стад/с), урон, интервал стрельбы, размер, цвет, на каком расстоянии держится
--- decal — сюда можно вставить id картинки из пакета (sprites/enemies/*.png), например "rbxassetid://123"
+-- decal — номер картинки из Asset Manager (sprites/enemies/*.png): "123456" или "rbxassetid://123456"
 local ETYPES = {
 	scout   = { hp = 20, speed = 15,   dmg = 6,  fire = {1.0, 1.9}, size = 3.2, color = Color3.fromRGB(159, 209, 232), keep = 22, decal = "" },
 	soldier = { hp = 35, speed = 9.5,  dmg = 8,  fire = {1.4, 2.6}, size = 3.8, color = Color3.fromRGB(143, 166, 184), keep = 22, decal = "" },
@@ -127,6 +127,8 @@ local function makeTankPart(size, color, decalId)
 	p.Color = color
 	p.Material = Enum.Material.SmoothPlastic
 	if decalId and decalId ~= "" then
+		-- можно вставлять просто номер из Asset Manager — приставку добавим сами
+		if not string.find(decalId, "rbxassetid") then decalId = "rbxassetid://" .. decalId end
 		local d = Instance.new("Decal")
 		d.Texture = decalId
 		d.Face = Enum.NormalId.Top

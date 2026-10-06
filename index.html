@@ -1090,7 +1090,7 @@ const sfxStd = {
   }
 };
 
-// ---------- набор «ДЕНДИ»: звуки в духе 8-битной приставки (свои, не из чужих игр) ----------
+// ---------- набор «8-БИТ»: звуки в духе 8-битных приставок (свои, не из чужих игр) ----------
 // импульсная волна узкой скважности (12.5% / 25%) — фирменный «писк» приставки
 function nesWave(duty){
   const ac = AC; ac._nesW = ac._nesW || {};
@@ -1156,7 +1156,7 @@ function nesNoise(dur, vol, o){
   s.connect(g); g.connect(ac.destination);
   s.start(t0); s.stop(t0 + dur + 0.03);
 }
-const sfxDendy = {
+const sfx8bit = {
   cannon(k){
     if(k === 'heavy'){        // тяжёлый: рокочущий «бу-у-ух»
       nesNoise(.3, .1, { hz: 9000, slide: .12 });
@@ -1233,14 +1233,14 @@ const sfxDendy = {
     nesNoise(.4, .06, { hz: 3000, at: .72 });
   }
 };
-// активный набор звуков: «обычный» или «ДЕНДИ» (выбор в музыке, сохраняется)
+// активный набор звуков: «обычный» или «8-БИТ» (кнопка в меню музыки, сохраняется)
 const sfx = {};
 let sfxSet = 'std';
-try{ if(localStorage.getItem('sm_sfx') === 'dendy') sfxSet = 'dendy'; }catch(e){}
+try{ if(localStorage.getItem('sm_sfx') === '8bit') sfxSet = '8bit'; }catch(e){}
 function applySfxSet(id){
-  sfxSet = id === 'dendy' ? 'dendy' : 'std';
+  sfxSet = id === '8bit' ? '8bit' : 'std';
   for(const k of Object.keys(sfx)) delete sfx[k];
-  Object.assign(sfx, sfxStd, sfxSet === 'dendy' ? sfxDendy : {});
+  Object.assign(sfx, sfxStd, sfxSet === '8bit' ? sfx8bit : {});
   try{ localStorage.setItem('sm_sfx', sfxSet); }catch(e){}
 }
 applySfxSet(sfxSet);
@@ -1253,7 +1253,7 @@ const music = (() => {
   try{
     on = localStorage.getItem('sm_music') !== '0';
     const t = localStorage.getItem('sm_track');
-    if(['dance','rock','chill','dendy'].includes(t)) trackId = t;
+    if(['dance','rock','chill'].includes(t)) trackId = t; // трек «ДЕНДИ» убран (не зашёл) — сохранённый выбор откатится на ДАНС
   }catch(e){}
   let timer = null, step = 0, nextTime = 0, noiseBuf = null;
   const f = m => 440*Math.pow(2, (m-69)/12);
@@ -1320,35 +1320,6 @@ const music = (() => {
       ],
       kick: i => i % 8 === 0, snare: () => false, hat: i => i % 4 === 2
     },
-    // «Денди»: честный NES — два квадратных голоса, треугольный бас, 160 BPM.
-    // Мелодия оригинальная, скопированы только приёмы эпохи: скачки́ октав,
-    // бодрые пробежки и ответы второго голоса на слабые доли.
-    dendy: {
-      // лид на октаву выше ДАНСа, отрывистые 16-е (leadLen), темп заметно бодрее —
-      // «чирикающий» верх NES, чтобы не путался с данс-треком
-      // 168 -> 152: лид 16-ми «тараторил» — даём дыхание, рисунок прежний
-      name: 'ДЕНДИ', bpm: 152, leadType: 'square', leadVol: 0.024, leadLen: 0.95,
-      bassVol: 0.05, harmVol: 0.016,
-      lead: [
-        84,88,91,88, 84,0,79,0, 81,83,84,86, 88,0,84,0,
-        89,88,86,88, 89,0,86,0, 91,89,88,86, 88,0,0,0,
-        88,91,96,91, 93,91,88,84, 86,88,89,86, 83,0,79,0,
-        84,86,88,89, 91,0,88,0, 86,0,83,0, 84,0,0,0
-      ],
-      harm: [
-        0,0,64,0, 0,0,67,0, 0,0,64,0, 0,0,67,0,
-        0,0,65,0, 0,0,69,0, 0,0,67,0, 0,0,71,0,
-        0,0,67,0, 0,0,64,0, 0,0,65,0, 0,0,62,0,
-        0,0,64,0, 0,0,67,0, 0,0,62,0, 0,0,64,0
-      ],
-      bass: [
-        36,48,36,48, 36,48,36,48,
-        41,53,41,53, 43,55,43,55,
-        36,48,36,48, 41,53,43,55,
-        36,48,43,55, 36,43,36,36
-      ],
-      kick: i => i % 8 === 0 || i % 16 === 6, snare: i => i % 8 === 4, hat: i => i % 2 === 0
-    }
   };
   function cur(){ return TRACKS[trackId] || TRACKS.dance; }
   function osc(type, freq, t, dur, vol){
@@ -5967,7 +5938,7 @@ function renderDiffRow(){
 function renderMusicRow(){
   const row = $('musicRow');
   row.innerHTML = '';
-  const items = [['dance','ДАНС','note'],['rock','РОК','guitar'],['chill','ЧИЛЛ','moon'],['dendy','ДЕНДИ','pad'],[null,'ВЫКЛ','mute']];
+  const items = [['dance','ДАНС','note'],['rock','РОК','guitar'],['chill','ЧИЛЛ','moon'],[null,'ВЫКЛ','mute']];
   for(const [id, label, icon] of items){
     const b = document.createElement('button');
     const active = id === null ? !music.on : (music.on && music.track === id);
@@ -5983,6 +5954,19 @@ function renderMusicRow(){
     });
     row.append(b);
   }
+  // набор звуков «8-БИТ»: выстрелы, взрывы и мелодии в духе старых приставок
+  const xb = document.createElement('button');
+  const on8 = sfxSet === '8bit';
+  xb.className = 'classbtn' + (on8 ? ' sel' : '');
+  xb.style.flexDirection = 'row';
+  xb.append(pixIcon('pad', on8 ? '#6fe58f' : '#9fb3c4', 13), document.createTextNode(' 8-БИТ ЗВУКИ'));
+  xb.addEventListener('click', ()=>{
+    audio();
+    applySfxSet(on8 ? 'std' : '8bit');
+    sfx.pickup(); // сразу слышно, какой набор включён
+    renderMusicRow();
+  });
+  row.append(xb);
   // озвучка зловещим голосом (если браузер умеет синтез речи)
   if(voice.ok){
     const vb = document.createElement('button');

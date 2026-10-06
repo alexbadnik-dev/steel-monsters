@@ -369,7 +369,7 @@ html{height:100%}
 <script>
 'use strict';
 // Поднимать при каждом релизе вместе с CACHE в sw.js
-const GAME_VERSION = 'v97';
+const GAME_VERSION = 'v98';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const GCTX = ctx; // основной контекст — для функций, умеющих рисовать и на превью
@@ -524,8 +524,10 @@ function makeScenery(){
   grad.addColorStop(1, 'rgba(0,0,0,0.42)');
   vc.fillStyle = grad; vc.fillRect(0, 0, vig.width, vig.height);
 }
+let winW = 0, winH = 0;
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
+  winW = window.innerWidth; winH = window.innerHeight;
   // мир больше экрана в 1/VIEW_SCALE раза, рендер ужимается обратно трансформом
   W = Math.round(window.innerWidth / VIEW_SCALE);
   H = Math.round(window.innerHeight / VIEW_SCALE);
@@ -4828,7 +4830,9 @@ function loop(now){
   let dt = (now - last) / 1000;
   last = now;
   if(dt > 0.05) dt = 0.05;
-  if(window.innerWidth !== W || window.innerHeight !== H) resize();
+  // сравниваем с размером ОКНА, а не мира: на телефоне мир больше окна (VIEW_SCALE),
+  // иначе resize() дёргался каждый кадр и декорации перекидывались — рябь
+  if(window.innerWidth !== winW || window.innerHeight !== winH) resize();
   if(state.mode === 'play') update(dt);
   else if(state.mode === 'story'){ state.time += dt; story.t += dt; }
   else state.time += dt; // в меню время тоже идёт: живут мигалки, пламя, хамелеон

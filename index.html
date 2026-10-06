@@ -2405,9 +2405,11 @@ function update(dt){
   let aimA = null;
   if(IS_TOUCH && !mouse.used){
     let best2 = null, bd = Infinity;
-    for(const e of enemies){ const d = dist(player.x,player.y,e.x,e.y); if(d<bd){ bd=d; best2=e; } }
-    for(const dr of drones){ const d = dist(player.x,player.y,dr.x,dr.y); if(d<bd){ bd=d; best2=dr; } }
-    if(boss){ const d = dist(player.x,player.y,boss.x,boss.y); if(d<bd){ bd=d; best2=boss; } }
+    // целимся только в тех, кто уже выехал на поле: пока колонна за краем — не палим впустую
+    const onField = o => o.x > 0 && o.x < W && o.y > 0 && o.y < H;
+    for(const e of enemies){ if(!onField(e)) continue; const d = dist(player.x,player.y,e.x,e.y); if(d<bd){ bd=d; best2=e; } }
+    for(const dr of drones){ if(!onField(dr)) continue; const d = dist(player.x,player.y,dr.x,dr.y); if(d<bd){ bd=d; best2=dr; } }
+    if(boss && onField(boss)){ const d = dist(player.x,player.y,boss.x,boss.y); if(d<bd){ bd=d; best2=boss; } }
     if(best2){
       // упреждение по быстрым целям (дроны): целимся туда, где цель будет к прилёту пули
       let tx = best2.x, ty = best2.y;
@@ -2457,6 +2459,7 @@ function update(dt){
         const cand = (boss && !boss.entering) ? enemies.concat([boss]) : enemies;
         for(const e of cand){
           if(dist(player.x, player.y, e.x, e.y) > 560) continue;
+          if(e.x < 0 || e.x > W || e.y < 0 || e.y > H) continue; // за краем карты не летаем
           let sc2 = e === boss ? 2.5 : 1;
           for(const o of enemies) if(o !== e && dist(e.x, e.y, o.x, o.y) < 80) sc2++;
           if(sc2 > bestScore){ bestScore = sc2; best = e; }

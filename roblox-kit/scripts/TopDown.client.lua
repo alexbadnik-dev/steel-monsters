@@ -18,6 +18,7 @@ local HEIGHT = 75        -- высота камеры: больше — видн
 local COOLDOWN = 0.24    -- как у танка «Балбес»
 local firing = false
 local lastShot = 0
+local lastAim = 0
 
 -- надпись волны вверху экрана
 local gui = Instance.new("ScreenGui")
@@ -42,6 +43,12 @@ RunService.RenderStepped:Connect(function()
 	if root then
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.CFrame = CFrame.new(root.Position + Vector3.new(0, HEIGHT, 0)) * CFrame.Angles(-math.pi / 2, 0, 0)
+	end
+	-- 10 раз в секунду сообщаем серверу, куда смотрит прицел — по нему крутится башня (версия 2)
+	if os.clock() - lastAim > 0.1 then
+		lastAim = os.clock()
+		local aimEvent = ReplicatedStorage:FindFirstChild("Aim")
+		if aimEvent then aimEvent:FireServer(mouse.Hit.Position) end
 	end
 	if firing and os.clock() - lastShot >= COOLDOWN then
 		lastShot = os.clock()

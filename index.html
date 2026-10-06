@@ -4295,12 +4295,6 @@ function storyShot(t, W, H, groundY, heroY){
   return { cx: W*0.38 + e*(W*0.5 - W*0.38), cy: groundY + 84 - e*44, z: 1.5 - e*0.48, cut: SHOT_CUTS[2], n: 3 };
 }
 
-// глухой удар на монтажной склейке — «стинг»
-function storySting(){
-  beep(58, .55, 'sine', .11, -22);
-  beep(150, .22, 'triangle', .05, -90);
-  noiseBurst(.3, .05, 'lowpass', 1200, -900);
-}
 function drawStoryScene(ctx, W, H, t, S){
   const bh = Math.min(64, H*0.1);          // киношные чёрные полосы
   const groundY = H*0.44;
@@ -5494,14 +5488,8 @@ function loop(now){
   // иначе resize() дёргался каждый кадр и декорации перекидывались — рябь
   if(window.innerWidth !== winW || window.innerHeight !== winH) resize();
   if(state.mode === 'play') update(dt);
-  else if(state.mode === 'story'){
-    const was = story.t;
-    state.time += dt; story.t += dt;
-    // прошли момент склейки — бьём стингом (только в главах с генералом и в финале)
-    if(story.bossDef || story.finale){
-      for(const c of SHOT_CUTS) if(c > 0 && was < c && story.t >= c) storySting();
-    }
-  }
+  else if(state.mode === 'story'){ state.time += dt; story.t += dt; }
+  // звукового удара на склейке нет: вспышка и смена крупности и так читаются, а удар спорил с музыкой
   else state.time += dt; // в меню время тоже идёт: живут мигалки, пламя, хамелеон
   // вне боя тряску гасим здесь: update() не тикает, иначе фон «ПОДБИТ!» дрожит вечно
   if(state.mode !== 'play' && state.shake > 0) state.shake = Math.max(0, state.shake - dt*18);

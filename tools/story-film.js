@@ -33,17 +33,6 @@ function wav(samples, sr){
     }, t);
     fs.writeFileSync(`${D}/frames/f${String(i).padStart(4,'0')}.png`, Buffer.from(url.split(',')[1], 'base64'));
   }
-  // звук склейки — рендерим офлайн
-  const st = await pg.evaluate(async () => {
-    const SR = 44100;
-    const ctx = new OfflineAudioContext(1, SR, SR);
-    const keep = AC; AC = ctx; soundOn = true;
-    storySting();
-    const d = (await ctx.startRendering()).getChannelData(0);
-    AC = keep;
-    return Array.from(d);
-  });
-  fs.writeFileSync(`${D}/sting.wav`, wav(st, 44100));
   console.log('кадров:', FPS*DUR, 'ошибки:', errs.filter(e => !e.includes('ServiceWorker')));
   await b.close();
 })();

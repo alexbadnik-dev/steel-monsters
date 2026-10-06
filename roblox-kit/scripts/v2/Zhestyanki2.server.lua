@@ -71,8 +71,8 @@ local IMG = {
 
 -- ЛИСТЫ «корпус + башня» (sheets/tanks_hull.png и sheets/tanks_turret.png): загрузи обе картинки
 -- в Asset Manager и впиши их номера сюда. Пока пусто — танки цельные (башня не крутится).
-local SHEET_HULL = ""
-local SHEET_TURRET = ""
+local SHEET_HULL = "70604598370510"   -- …870 (основа)
+local SHEET_TURRET = "99291122208702" -- …871 (башни)
 local CELL, COLS = 128, 8
 local CELLS = {
 	"skin:green", "skin:blue", "skin:desert", "skin:pink", "skin:violet", "skin:orange",

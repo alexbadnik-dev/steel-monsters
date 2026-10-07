@@ -1,7 +1,7 @@
 // Скриншоты для магазинов (RuStore, Play, AppGallery) и для манифеста.
 // Запуск: node tools/shots.js   → media/screens/*.png (1280×720, с мобильным управлением)
 // Бой играет бот на настоящем коде игры: кружит, уворачивается, стреляет.
-const { chromium, devices } = require('/opt/node-tools/node_modules/playwright');
+const { chromium, devices, LAUNCH } = require('./pw');
 const D = __dirname + '/../media/screens';
 
 const BOT = `
@@ -46,7 +46,7 @@ const SHOTS = [
 ];
 
 (async () => {
-  const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const b = await chromium.launch(LAUNCH);
   const pg = await b.newPage({ ...devices['Pixel 7'], viewport: { width: 1024, height: 576 } });
   const errs = []; pg.on('pageerror', e => errs.push(e.message));
   await pg.route('**/rest/v1/**', r => r.fulfill({ status: 201, body: '[]' }));

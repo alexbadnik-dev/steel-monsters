@@ -1,0 +1,11 @@
+# В репозитории и в рабочем дереве — всегда LF: тут shell-скрипты (android/build.sh,
+# build-platforms.sh) и инструменты, которые разбирают файлы построчно.
+* text=auto eol=lf
+
+*.png  binary
+*.jpg  binary
+*.mp4  binary
+*.zip  binary
+*.apk  binary
+*.woff2 binary
+*.keystore binary

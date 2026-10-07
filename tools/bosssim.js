@@ -1,11 +1,12 @@
 // Запуск: node tools/bosssim.js file:///home/user/steel-monsters/index.html 5 "$(cat tools/bosssim-grid.json)"
 // Вывод: время убийства босса (ttk, без въезда) и «сколько живёт» бот без уворотов-гениев (lives).
 // Симулятор боя с боссом на НАСТОЯЩЕМ коде игры: бот кружит, уворачивается, собирает бонусы
-const { chromium, devices } = require('/opt/node-tools/node_modules/playwright');
-const FILE = process.argv[2] || 'file:///home/user/steel-monsters/index.html';
+const { chromium, devices, LAUNCH } = require('./pw');
+const INDEX = require('url').pathToFileURL(require('path').join(__dirname, '..', 'index.html')).href;  // адрес игры рядом с инструментом
+const FILE = process.argv[2] || INDEX;
 const RUNS = +(process.argv[3] || 4);
 (async () => {
-  const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const b = await chromium.launch(LAUNCH);
   const pg = await b.newPage({ ...devices['Pixel 7'], viewport: { width: 915, height: 412 } });
   await pg.route('**/rest/v1/**', r => r.fulfill({ status: 201, body: '[]' }));
   await pg.goto(FILE);

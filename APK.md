@@ -47,6 +47,26 @@ sudo apt-get install -y aapt apksigner zipalign dalvik-exchange android-sdk-plat
 | Разрешения | интернет, состояние сети, вибрация |
 | Размер | ≈800 КБ |
 
+## Сборка на домашнем компьютере (Windows, 07.10.2026)
+
+Android Studio не нужен — инструменты лежат портативно в `D:\Android`, без прав администратора:
+
+| Что | Где | Зачем |
+|---|---|---|
+| JDK 17 (Temurin) | `D:\Android\jdk` | javac, keytool, запуск apksigner и d8 |
+| Android SDK | `D:\Android\sdk` | build-tools 34.0.0 (aapt, zipalign, apksigner, d8), platforms 23 и 34, platform-tools (adb) |
+
+`build.sh` сам находит SDK: берёт `ANDROID_HOME`, а если его нет — `D:/Android/sdk`.
+В Ubuntu по-прежнему работает на пакетах apt, ничего переставлять не надо.
+Три windows-грабли, на которые скрипт теперь не наступает: `d8` вместо `dalvik-exchange`,
+`javac -encoding UTF-8` (иначе исходники читаются как cp1251) и проверка python «делом» —
+`python3` в Windows это пустая заглушка из Microsoft Store.
+
+Запуск из Git Bash: `bash android/build.sh`. Проверено 07.10.2026 — APK собрался
+байт в байт того же размера (821 377), подпись v2+v3, `tools/apk-webtest.js` прошёл.
+
+Телефон подключается по USB: `D:/Android/sdk/platform-tools/adb.exe install -r android/build/zhestyanki-1.0.0.apk`.
+
 ## Ключ подписи — самое важное
 
 `android/keystore/zhestyanki.keystore` и пароль `android/keystore/password.txt`.

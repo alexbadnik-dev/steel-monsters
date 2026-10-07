@@ -5,6 +5,7 @@ package com.okakgames.zhestyanki;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
@@ -155,6 +156,24 @@ public class MainActivity extends Activity {
                 public void run() { doShare(text, b64); }
             });
         }
+
+        /** Бой — всегда альбомный, как бы игрок ни держал телефон. */
+        @JavascriptInterface
+        public void lockLandscape() { setOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE); }
+
+        /** Меню — как держит, так и показываем: вертикально оно помещается целиком. */
+        @JavascriptInterface
+        public void freeOrientation() { setOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR); }
+    }
+
+    // Поворотом в приложении заведует активность: веб-блокировка screen.orientation
+    // в системном WebView не работает, там это умеет только сам Android.
+    private void setOrientation(final int mode) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                try { setRequestedOrientation(mode); } catch (Throwable t) { /* переживём */ }
+            }
+        });
     }
 
     private void doShare(String text, String b64) {

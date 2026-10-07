@@ -1960,6 +1960,11 @@ const OVERLAYS = ['menu','pause','gameover','victory','shop','board','help','per
 // поворачиваться сама, как нативные игры, даже при выключенном автоповороте
 function lockLandscape(){
   if(!IS_TOUCH) return;
+  // в приложении поворот просит сама Android-активность: в системном WebView
+  // веб-блокировка screen.orientation не работает
+  if(window.AndroidApp && AndroidApp.lockLandscape){
+    try{ AndroidApp.lockLandscape(); return; }catch(e){}
+  }
   const doLock = () => {
     try{
       if(screen.orientation && screen.orientation.lock)
@@ -1977,6 +1982,9 @@ function lockLandscape(){
 }
 function unlockOrientation(){
   if(!IS_TOUCH) return;
+  if(window.AndroidApp && AndroidApp.freeOrientation){
+    try{ AndroidApp.freeOrientation(); return; }catch(e){}
+  }
   try{ if(screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); }catch(e){}
 }
 

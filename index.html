@@ -6435,8 +6435,12 @@ function updateMenuBest(){
   $('coinsText').innerHTML = COIN_IMG + ' ' + (profile.coins|0);
   $('nameInput').value = profile.name;
   $('verText').textContent = 'Версия ' + GAME_VERSION;
-  $('outboxNote').hidden = !outbox.length;
-  if(outbox.length) $('outboxNote').textContent = '⚠ Результатов в очереди на отправку: ' + outbox.length + ' — дошлём сами';
+  // очередь отправки — только там, где мы ею пользуемся. На Яндексе рейтинг идёт
+  // через их SDK, Supabase выключен, и старая очередь уже никогда не уйдёт:
+  // показывать «дошлём сами» было бы обманом.
+  const showOutbox = outbox.length && PLATFORM !== 'yandex';
+  $('outboxNote').hidden = !showOutbox;
+  if(showOutbox) $('outboxNote').textContent = '⚠ Результатов в очереди на отправку: ' + outbox.length + ' — дошлём сами';
   renderClassRow();
   renderDiffRow();
   renderMusicRow();

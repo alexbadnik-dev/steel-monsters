@@ -2954,6 +2954,15 @@ function update(dt){
         minionTimer = boss.enraged ? 7 : 9;
       }
     }
+    boss.turret = lerpAng(boss.turret, angTo(boss.x,boss.y,player.x,player.y), Math.min(1, dt*3.5));
+    boss.hull = boss.turret;
+    boss.trackPhase = (boss.trackPhase || 0) + (boss.dashing > 0 ? 70 : 16)*dt;
+  }
+
+  // Полоска здоровья и «ярость» — ВНЕ блока ИИ босса. Под заморозкой босс не думает,
+  // но урон по нему идёт (пули, бомбы, луч, бочки), и полоска обязана это показывать:
+  // иначе она молчит всю заморозку и дёргается рывком, когда та кончится.
+  if(boss){
     if(!boss.enraged && boss.hp <= boss.maxHp/2){
       boss.enraged = true;
       waveBanner = { text: boss.def.name + ' В ЯРОСТИ!', t: 2.2 };
@@ -2962,9 +2971,6 @@ function update(dt){
       sfx.enrage(); vibrate(150);
       state.shake = Math.min(state.shake + (REDUCED?0:8), 12);
     }
-    boss.turret = lerpAng(boss.turret, angTo(boss.x,boss.y,player.x,player.y), Math.min(1, dt*3.5));
-    boss.hull = boss.turret;
-    boss.trackPhase = (boss.trackPhase || 0) + (boss.dashing > 0 ? 70 : 16)*dt;
     $('bossbar').style.width = Math.max(0, boss.hp/boss.maxHp*100) + '%';
   }
 

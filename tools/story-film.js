@@ -1,5 +1,6 @@
 // Покадровая съёмка главы: точный тайминг, чистый кадр (только холст, без кнопок)
-const { chromium } = require('/opt/node-tools/node_modules/playwright');
+const { chromium, LAUNCH } = require('./pw');
+const INDEX = require('url').pathToFileURL(require('path').join(__dirname, '..', 'index.html')).href;  // адрес игры рядом с инструментом
 const fs = require('fs');
 const D = __dirname + '/ch1f';
 const FPS = 25, DUR = 11;
@@ -13,11 +14,11 @@ function wav(samples, sr){
   return b;
 }
 (async () => {
-  const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const b = await chromium.launch(LAUNCH);
   const pg = await b.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const errs = []; pg.on('pageerror', e => errs.push(e.message));
   await pg.route('**/rest/v1/**', r => r.fulfill({ status: 201, body: '[]' }));
-  await pg.goto('file:///home/user/steel-monsters/index.html');
+  await pg.goto(INDEX);
   await pg.waitForTimeout(800);
   await pg.evaluate(() => {
     state.mode = 'menu'; setOverlay(null);

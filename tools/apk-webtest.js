@@ -1,14 +1,16 @@
 // Проверка того, что лежит ВНУТРИ APK: игра отдаётся с адреса appassets.androidplatform.net,
 // шрифты свои, сервис-воркера нет, интернета нет (как в самолёте).
 // Запуск: node tools/apk-webtest.js
-const { chromium, devices } = require('/opt/node-tools/node_modules/playwright');
-const fs = require('fs'), path = require('path');
+const { chromium, devices, LAUNCH } = require('./pw');
+const fs = require('fs'), path = require('path'), os = require('os');
+// куда класть скриншоты: SHOTS=<папка> node tools/apk-webtest.js, иначе временная папка
+const SHOTS = process.env.SHOTS || os.tmpdir();
 const ROOT = path.join(__dirname, '..', 'android', 'build', 'assets');
 const MIME = { '.html':'text/html', '.css':'text/css', '.js':'application/javascript',
   '.png':'image/png', '.woff2':'font/woff2', '.webmanifest':'application/json', '.txt':'text/plain' };
 
 (async () => {
-  const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const b = await chromium.launch(LAUNCH);
   const pg = await b.newPage({ ...devices['Pixel 7'], viewport: { width: 1024, height: 576 } });
   const log = [], net = [];
   pg.on('pageerror', e => log.push('ОШИБКА: ' + e.message));
@@ -43,14 +45,14 @@ const MIME = { '.html':'text/html', '.css':'text/css', '.js':'application/javasc
   }));
   info.swRegs = (await pg.evaluate(() => navigator.serviceWorker ? navigator.serviceWorker.getRegistrations().then(r => r.length) : -1));
 
-  await pg.screenshot({ path: '/tmp/claude-0/-home-user-steel-monsters/6ad81524-43b3-5161-8d39-2c9e75ea12b5/scratchpad/apk-menu.png' });
+  await pg.screenshot({ path: path.join(SHOTS, 'apk-menu.png') });
 
   // бой: заводим игру и играем ботом
   await pg.evaluate(() => { state.mode = 'play'; setOverlay(null); resetGame(12); fireTouch.id = 99; });
   await pg.waitForTimeout(6000);
   const fight = await pg.evaluate(() => ({ mode: state.mode, wave: state.wave,
     hp: Math.round(player.hp), enemies: enemies.length, score: state.score }));
-  await pg.screenshot({ path: '/tmp/claude-0/-home-user-steel-monsters/6ad81524-43b3-5161-8d39-2c9e75ea12b5/scratchpad/apk-fight.png' });
+  await pg.screenshot({ path: path.join(SHOTS, 'apk-fight.png') });
 
   // сохранение прогресса переживает перезагрузку?
   await pg.evaluate(() => { profile.coins = 777; saveProfile(); });

@@ -1,4 +1,5 @@
-const { chromium, devices } = require('/opt/node-tools/node_modules/playwright');
+const { chromium, devices, LAUNCH } = require('./pw');
+const INDEX = require('url').pathToFileURL(require('path').join(__dirname, '..', 'index.html')).href;  // адрес игры рядом с инструментом
 const MOCK = (authed, cloud) => `
 window.__ya = { setData: [], setScore: [], cloud: ${JSON.stringify(cloud)}, authed: ${authed} };
 window.YaGames = { init: () => Promise.resolve({
@@ -20,7 +21,7 @@ window.YaGames = { init: () => Promise.resolve({
   }
 }) };`;
 (async () => {
-  const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const b = await chromium.launch(LAUNCH);
   async function page(authed, cloud, local){
     const ctx = await b.newContext({ ...devices['Pixel 7'], viewport: { width: 915, height: 412 } });
     const pg = await ctx.newPage();
@@ -29,7 +30,7 @@ window.YaGames = { init: () => Promise.resolve({
     pg.on('request', r => { if (r.url().includes('supabase.co')) supa.push(r.url()); });
     await pg.route('https://yandex.ru/games/sdk/v2', r => r.fulfill({ contentType: 'application/javascript', body: MOCK(authed, cloud) }));
     if (local) await pg.addInitScript(l => { if(!sessionStorage.getItem('t_init')){ sessionStorage.setItem('t_init','1'); localStorage.setItem('sm_profile', JSON.stringify(l)); } }, local);
-    await pg.goto('file:///home/user/steel-monsters/index.html?platform=yandex');
+    await pg.goto(INDEX + '?platform=yandex');
     await pg.waitForTimeout(2500);
     return { pg, ctx, errs, supa };
   }

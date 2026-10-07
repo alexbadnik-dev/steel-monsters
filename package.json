@@ -1,0 +1,8 @@
+{
+  "name": "steel-monsters-tools",
+  "private": true,
+  "description": "Инструменты проверки игры: тесты APK, скриншоты, симулятор боя, превью заставок",
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

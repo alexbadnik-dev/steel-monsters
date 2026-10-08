@@ -4824,7 +4824,7 @@ function drawStoryScene(ctx, W, H, t, S){
     }
     if(shotP < FLY && heroX > W*0.3){              // сам снаряд с коротким хвостом
       const q = shotP/FLY;
-      const px = mx + (tx - mx)*q, py = my + (ty - my)*q - Math.sin(Math.PI*q)*14; // лёгкая дуга
+      const px = mx + (tx - mx)*q, py = my + (ty - my)*q; // прямой наводкой: дуга — примета миномётчика
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(Math.atan2(ty - my, tx - mx));

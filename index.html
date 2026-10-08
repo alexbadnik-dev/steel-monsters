@@ -278,7 +278,7 @@ html{height:100%}
     <span data-pick="med">лечение</span>
     <span data-pick="shield">щит</span>
     <span data-pick="rapid">скорострел</span>
-    <span data-pick="triple">тройной</span>
+    <span data-pick="triple">веер</span>
     <span data-pick="freeze">заморозка</span>
     <span data-pick="magnet">магнит</span>
     <span data-pick="beam">ЛУЧ (с 60-й волны)</span>
@@ -650,7 +650,7 @@ const UPGRADES = [
     desc: l => 'Держится ' + (6 + l*1.5) + ' сек' },
   { id:'rapid',  name:'Скорострел', chip:'⚡', color:'#f1c40f', ink:'#5c4a02', costs:[600,1200,3600],
     desc: l => 'Держится ' + (6 + l*1.5) + ' сек' },
-  { id:'triple', name:'Тройной',    chip:'3×', color:'#ff9f43', ink:'#5e3208', costs:[600,1200,3600],
+  { id:'triple', name:'Веер',       chip:'≡', color:'#ff9f43', ink:'#5e3208', costs:[600,1200,3600],
     desc: l => (l >= 3 ? 'ПЯТЬ стволов! · ' : '') + 'Держится ' + (8 + l*2) + ' сек' + (l === 2 ? ' · на 3 ур. — 5 стволов!' : '') },
   { id:'freeze', name:'Заморозка',  chip:'❄', color:'#bfe8f5', ink:'#0f465e', costs:[600,1200,3600],
     desc: l => 'Морозит ' + (3.5 + l) + ' сек' },
@@ -2591,7 +2591,7 @@ function applyPickup(p){
   if(p.type === 'med'){ const h = 25 + U.med*10; player.hp = Math.min(player.maxHp, player.hp + h); addFloat(p.x, p.y, '+' + h, '#6fe58f'); }
   else if(p.type === 'shield'){ player.shieldT = 6 + bb + U.shield*1.5; addFloat(p.x, p.y, 'ЩИТ!', '#6fd9e8'); }
   else if(p.type === 'rapid'){ player.rapidT = 6 + bb + U.rapid*1.5; addFloat(p.x, p.y, 'СКОРОСТРЕЛ!', '#f1c40f'); }
-  else if(p.type === 'triple'){ player.tripleT = 8 + bb + U.triple*2; addFloat(p.x, p.y, U.triple >= 3 ? 'ПЯТЕРНОЙ!' : 'ТРОЙНОЙ!', '#ff9f43'); }
+  else if(p.type === 'triple'){ player.tripleT = 8 + bb + U.triple*2; addFloat(p.x, p.y, U.triple >= 3 ? 'ВЕЕР ×5!' : 'ВЕЕР ×3!', '#ff9f43'); }
   else if(p.type === 'freeze'){ state.freezeT = 3.5 + (U.freeze|0); addFloat(p.x, p.y, 'ЗАМОРОЗКА!', '#9fd9e8'); }
   else if(p.type === 'magnet'){ state.magnetT = 10 + (U.magnet|0)*3; addFloat(p.x, p.y, 'МАГНИТ!', '#f78fb3'); }
   else if(p.type === 'beam'){
@@ -3236,7 +3236,7 @@ function update(dt){
   if(state.magnetT > 0) fx.push('🧲 Магнит ' + Math.ceil(state.magnetT));
   if(player.shieldT > 0) fx.push('Щит ' + Math.ceil(player.shieldT));
   if(player.rapidT > 0) fx.push('Скорострел ' + Math.ceil(player.rapidT));
-  if(player.tripleT > 0) fx.push('Тройной ' + Math.ceil(player.tripleT));
+  if(player.tripleT > 0) fx.push('Веер ' + Math.ceil(player.tripleT));
   if(player.beamT > 0) fx.push('🔆 ЛУЧ ' + Math.ceil(player.beamT));
   if(state.stormT > 0) fx.push('🌪 Буря ' + Math.ceil(state.stormT));
   if(state.mutator) fx.push(state.mutator.icon + ' ' + state.mutator.name);

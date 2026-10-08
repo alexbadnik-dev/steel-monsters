@@ -4791,17 +4791,34 @@ function drawStoryScene(ctx, W, H, t, S){
       ctx.fill();
       ctx.globalAlpha = 1;
     }
-    // герой контрольно постреливает в сторону босса
-    if(shotP < 0.1 && heroX > W*0.3){
-      ctx.strokeStyle = '#f1c40f';
-      ctx.globalAlpha = 1 - shotP/0.1;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(heroX + 52, heroY - 17);
-      ctx.lineTo(bx - 45, by - 18);
-      ctx.stroke();
+    // Герой контрольно постреливает в сторону босса. Раньше тут рисовалась сплошная
+    // линия от дула до цели — выглядело лазером, хотя у нас танк. Теперь летит снаряд.
+    const FLY = 0.42;                              // сколько снаряд в пути, с
+    const mx = heroX + 52, my = heroY - 17;        // срез ствола
+    const tx = bx - 45, ty = by - 18;              // куда прилетает
+    if(shotP < 0.07 && heroX > W*0.3){             // вспышка у дула
+      ctx.globalAlpha = 1 - shotP/0.07;
       ctx.fillStyle = '#ffe08a';
-      ctx.beginPath(); ctx.arc(heroX + 54, heroY - 17, 7, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(mx + 2, my, 7, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    if(shotP < FLY && heroX > W*0.3){              // сам снаряд с коротким хвостом
+      const q = shotP/FLY;
+      const px = mx + (tx - mx)*q, py = my + (ty - my)*q - Math.sin(Math.PI*q)*14; // лёгкая дуга
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(Math.atan2(ty - my, tx - mx));
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#ffe08a'; ctx.fillRect(-16, -1.4, 16, 2.8);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffe08a';
+      ctx.beginPath(); ctx.ellipse(0, 0, 5, 3.2, 0, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    } else if(shotP >= FLY && shotP < FLY + 0.14 && heroX > W*0.3){ // искра попадания
+      const a = 1 - (shotP - FLY)/0.14;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#ffd06a';
+      ctx.beginPath(); ctx.arc(tx, ty, 5 + (1 - a)*12, 0, Math.PI*2); ctx.fill();
       ctx.globalAlpha = 1;
     }
   }

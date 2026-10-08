@@ -1226,11 +1226,31 @@ function nesSteps(param, t0, dur, v0, mul, conv){
     param.setValueAtTime(conv(mul ? v0*Math.pow(mul, k) : v0), t0 + i/60);
   }
 }
+// Яркость 8-битного набора: выше число — звонче выстрел. 15000 — звонко, 13000 — как в оригинале
+// «Танчиков», 11000 — мягко. Менять тут, остальное подстроится.
+const NES_BRIGHT = 13000;
+// Общая шина только для 8-битного набора: срезаем ультразвук, которого у приставки не было,
+// и держим мягкий потолок — иначе залп «Веера» со взрывами складывается в перегруз.
+// Обычный набор сюда не ходит, он собран на других генераторах.
+function nesBus(){
+  const ac = AC; if(ac.__nesBus) return ac.__nesBus;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 14000; lp.Q.value = 0.7;
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4;
+  comp.attack.value = 0.003; comp.release.value = 0.12;
+  const g = ac.createGain(); g.gain.value = 0.9;
+  lp.connect(comp); comp.connect(g); g.connect(ac.destination);
+  return ac.__nesBus = lp;
+}
+// Резкость давала не высота, а длина: раньше громкость падала ровно и звук тянулся весь срок,
+// превращаясь в сплошное шипение. Теперь короткая атака вместо щелчка и крутой спад.
 function nesEnv(g, t0, dur, vol, sustain){
   const steps = Math.max(1, Math.round(dur*60));
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(vol, t0 + 0.006);
   for(let i = 0; i < steps; i++){
-    const k = i/steps, lv = Math.round(15*(sustain ? 1 - k*k : 1 - k));
-    g.gain.setValueAtTime(vol*lv/15, t0 + i/60);
+    const k = i/steps, lv = Math.round(15*(sustain ? 1 - k*k : Math.pow(1 - k, 2.2)));
+    g.gain.setValueAtTime(vol*lv/15, Math.max(t0 + 0.006, t0 + i/60));
   }
   g.gain.setValueAtTime(0, t0 + dur);
 }
@@ -1242,7 +1262,7 @@ function nesPulse(f0, dur, vol, o){
   if(o.tri) osc.type = 'triangle'; else osc.setPeriodicWave(nesWave(o.duty || 0.25));
   nesSteps(osc.frequency, t0, dur, f0, o.slide, f => Math.max(20, f));
   nesEnv(g, t0, dur, vol, o.sustain);
-  osc.connect(g); g.connect(ac.destination);
+  osc.connect(g); g.connect(nesBus());
   osc.start(t0); osc.stop(t0 + dur + 0.03);
 }
 // o: { at; hz — частота шагов регистра (выше — шипение, ниже — рокот); slide; metal }
@@ -1253,7 +1273,7 @@ function nesNoise(dur, vol, o){
   s.buffer = nesNoiseBuf(!!o.metal); s.loop = true;
   nesSteps(s.playbackRate, t0, dur, o.hz || 9000, o.slide, hz => Math.max(0.02, hz/ac.sampleRate));
   nesEnv(g, t0, dur, vol, o.sustain);
-  s.connect(g); g.connect(ac.destination);
+  s.connect(g); g.connect(nesBus());
   s.start(t0); s.stop(t0 + dur + 0.03);
 }
 const sfx8bit = {
@@ -1264,9 +1284,9 @@ const sfx8bit = {
     } else if(k === 'fast'){  // автопушка: «пиу»
       nesPulse(1200, .05, .06, { duty: .125, slide: .4 });
       nesNoise(.04, .06, { hz: 30000, slide: .3 });
-    } else {                  // универсал: «пыщ» с писком
-      nesNoise(.18, .14, { hz: 18000, slide: .09 });
-      nesPulse(660, .08, .07, { slide: .25 });
+    } else {                  // универсал: короткое «пиу» с телом
+      nesNoise(.08, .11, { hz: NES_BRIGHT, slide: .12 });
+      nesPulse(620, .08, .085, { slide: .3 });
     }
   },
   eshot(type){

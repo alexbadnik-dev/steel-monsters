@@ -3,6 +3,7 @@
   "private": true,
   "description": "Инструменты проверки игры: тесты APK, скриншоты, симулятор боя, превью заставок",
   "devDependencies": {
+    "lottie-web": "^5.13.0",
     "playwright": "^1.49.0"
   }
 }

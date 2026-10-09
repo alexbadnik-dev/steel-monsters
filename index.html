@@ -500,6 +500,7 @@ function adBreak(cb){
           vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'interstitial' })
             .then(() => cb()).catch(() => cb());
         };
+        vkAttach(vkBridge).catch(() => {}); // облачное сохранение в хранилище ВК
       }catch(e){}
     };
     document.head.appendChild(s);
@@ -564,7 +565,7 @@ resize();
 
 // ---------- best score ----------
 function loadBest(){ try{ return parseInt(localStorage.getItem('sm_best')||'0',10)||0; }catch(e){ return 0; } }
-function saveBest(v){ try{ localStorage.setItem('sm_best', String(v)); }catch(e){} if(typeof yaSaveSoon === 'function') yaSaveSoon(); }
+function saveBest(v){ try{ localStorage.setItem('sm_best', String(v)); }catch(e){} if(typeof yaSaveSoon === 'function') yaSaveSoon(); if(typeof vkSaveSoon === 'function') vkSaveSoon(); }
 let best = loadBest();
 
 // ---------- профиль: имя, монеты, скины ----------
@@ -758,6 +759,7 @@ function saveProfile(){
   try{ localStorage.setItem('sm_profile', JSON.stringify(profile)); }catch(e){}
   cloudSaveSoon(); // и в облако — чтобы чистка браузера больше ничего не теряла
   if(typeof yaSaveSoon === 'function') yaSaveSoon();
+  if(typeof vkSaveSoon === 'function') vkSaveSoon();
 }
 
 // ---------- облачный профиль: монеты/скины/прокачка живут и на сервере ----------
@@ -957,6 +959,65 @@ async function yaFetchBoard(){
     });
   }catch(e){ return null; }
 }
+// ---------- ВКонтакте: облачное сохранение через хранилище VK Bridge ----------
+// Хранилище ВК — пары «ключ-значение», привязанные к игроку: ровно то, что нужно профилю.
+// Потолок 4096 байт на ключ, имя ключа только из [a-zA-Z_-0-9]. У наигранного человека
+// сохранение весит около 1.3 КБ, но режем на части с запасом — чтобы не выяснять это
+// через год на чьём-то профиле.
+// Лидерборда здесь НЕТ намеренно: таблицу ВК наполняет метод secure.addAppEvent,
+// а он серверный (нужен сервисный ключ) и работает только у игр, уже прошедших модерацию.
+// VKWebAppShowLeaderBoardBox лишь показывает окно и ничего не сохраняет. Поэтому рейтинг
+// на ВК пока остаётся на Supabase, как на своём сайте.
+const VK_KEY = 'sm_save', VK_PARTS = 3, VK_CHUNK = 1200; // 1200 символов ≤ 3600 байт даже на сплошной кириллице
+const vk = { bridge: null, ready: false };
+let vkSaveT = null;
+
+function vkSaveSoon(){
+  try{ if(!vk.ready) return; }catch(e){ return; } // вызов до инициализации модуля — пропускаем
+  clearTimeout(vkSaveT);
+  vkSaveT = setTimeout(() => {
+    const s = JSON.stringify({ at: Number(profile.savedAt) || Date.now(), profile, cp: checkpoint, best });
+    for(let i = 0; i < VK_PARTS; i++){
+      // хвостовые части затираем пустой строкой: по документации ВК так переменная удаляется,
+      // иначе от прошлого, более длинного сохранения остался бы мусор
+      const part = s.slice(i * VK_CHUNK, (i + 1) * VK_CHUNK);
+      try{ vk.bridge.send('VKWebAppStorageSet', { key: VK_KEY + i, value: part }).catch(() => {}); }catch(e){}
+    }
+  }, 3000);
+}
+
+async function vkAttach(bridge){
+  if(bridge.supports && !bridge.supports('VKWebAppStorageSet')) return; // старый клиент — живём на localStorage
+  vk.bridge = bridge;
+  const keys = [];
+  for(let i = 0; i < VK_PARTS; i++) keys.push(VK_KEY + i);
+  let s = '';
+  try{
+    const res = await bridge.send('VKWebAppStorageGet', { keys });
+    const got = {};
+    for(const it of (res && res.keys) || []) got[it.key] = it.value || '';
+    for(let i = 0; i < VK_PARTS; i++) s += got[VK_KEY + i] || '';
+  }catch(e){ s = ''; }
+  vk.ready = true; // писать можно, даже если чтение не удалось: хуже, чем без облака, не будет
+  let sv = null;
+  try{ sv = s ? JSON.parse(s) : null; }catch(e){ sv = null; }
+  const cloudAt = Number(sv && sv.at) || 0, localAt = Number(profile.savedAt) || 0;
+  let synced = '';
+  try{ synced = sessionStorage.getItem('sm_vk_sync') || ''; }catch(e){}
+  if(sv && sv.profile && cloudAt > localAt + 1000 && synced !== String(cloudAt)){
+    // в облаке свежее (играли на другом устройстве) — берём его и перезапускаемся один раз
+    try{
+      sessionStorage.setItem('sm_vk_sync', String(cloudAt));
+      localStorage.setItem('sm_profile', JSON.stringify(Object.assign({}, sv.profile, { savedAt: cloudAt })));
+      if((sv.cp|0) > checkpoint) localStorage.setItem('sm_wave', String(sv.cp|0));
+      if((sv.best|0) > best) localStorage.setItem('sm_best', String(sv.best|0));
+    }catch(e){}
+    location.reload();
+    return;
+  }
+  if(!sv || localAt > cloudAt) vkSaveSoon(); // у нас свежее — отправляем наверх
+}
+
 function worldEnabled(){ return onlineEnabled() || (PLATFORM === 'yandex' && ya.ready); }
 
 function fmtTime(s){ s = Math.max(0, Math.round(s || 0)); return Math.floor(s/60) + ':' + String(s % 60).padStart(2, '0'); }
@@ -1066,6 +1127,7 @@ function saveCheckpoint(n){
     checkpoint = n;
     try{ localStorage.setItem('sm_wave', String(n)); }catch(e){}
     yaSaveSoon();
+    vkSaveSoon();
   }
 }
 

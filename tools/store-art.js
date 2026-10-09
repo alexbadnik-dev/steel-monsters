@@ -1,7 +1,11 @@
-// Картинки для вкладки «Оформление» в кабинете ВК.
-// Запуск: node tools/vk-art.js   → ВК/оформление/*.png
-//   большой сниппет  1120×630
-//   скриншоты        1200×600, минимум три, ВК показывает их на экране запуска в вебе
+// Витринные картинки для площадок — снимаем с настоящей игры.
+// Запуск: node tools/store-art.js            → всё сразу
+//         node tools/store-art.js snippet    → только сниппет ВК
+//         node tools/store-art.js cover      → только обложка Яндекса
+//   ВК/оформление/snippet-1120x630.png  большой сниппет
+//   ВК/оформление/screen-*.png          скриншоты 1200×600, минимум три,
+//                                       ВК показывает их на экране запуска в вебе
+//   Яндекс/cover_800x470.png            обложка игры в каталоге Яндекса
 // Снимаем с настоящей игры, как tools/shots.js, но в НАСТОЛЬНОМ режиме: без эмуляции
 // телефона, иначе поверх боя рисуются джойстик и кнопка огня, а ВК просит десктопный вид.
 // Боем правит бот: кружит вокруг цели, подбирает ящики, уворачивается от пуль.
@@ -69,10 +73,15 @@ async function shootScene(pg, s, file){
   await pg.waitForTimeout(1200);
   let best = -1, bestN = null;
   for(let i = 0; i < 22; i++){
-    const n = await pg.evaluate(() => ({
-      e: enemies.filter(x => !x.entering).length, b: bullets.length, p: particles.length,
-      boss: !!(boss && !boss.entering), play: state.mode === 'play'
-    }));
+    const n = await pg.evaluate(() => {
+      // объявление волны крупными буквами посреди экрана лезет на название
+      // и на сам бой — гасим его на каждом тике, кадр нужен чистый
+      try { if(typeof waveBanner !== 'undefined' && waveBanner) waveBanner.t = 0; } catch(e) {}
+      return {
+        e: enemies.filter(x => !x.entering).length, b: bullets.length, p: particles.length,
+        boss: !!(boss && !boss.entering), play: state.mode === 'play'
+      };
+    });
     const m = n.play ? n.e*2 + n.b + n.p*0.02 + (n.boss ? 8 : 0) : -1;
     if(m > best){ best = m; bestN = n; await pg.screenshot({ path: file }); }
     await pg.waitForTimeout(420);
@@ -90,14 +99,31 @@ async function openPage(b, width, height){
   return pg;
 }
 
-// `node tools/vk-art.js snippet` — пересобрать только сниппет, не гоняя все скриншоты
+// Название поверх кадра — им отличается витринная картинка от простого скриншота.
+// Кегль считаем от ширины, чтобы обложка 800 и сниппет 1120 выглядели одинаково.
+// Вешаем ДО съёмки: накладка статична, бой под ней продолжает жить, и цикл
+// «лучшего кадра» снимает её вместе с боем.
+const nazvanie = (W) => {
+  const sh = s => Math.round(s * W / 1120);
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:9999;pointer-events:none;display:flex;'
+    + 'flex-direction:column;align-items:center;justify-content:center;'
+    + 'background:radial-gradient(ellipse at center,rgba(0,0,0,.34),rgba(0,0,0,.66))';
+  const F = "font-family:'Russo One',system-ui,sans-serif;";
+  d.innerHTML = `<div style="${F}font-size:${sh(88)}px;letter-spacing:${sh(12)}px;`
+    + `color:#f1c40f;text-shadow:0 ${sh(6)}px 0 rgba(0,0,0,.6)">ЖЕСТЯНКИ</div>`
+    + `<div style="${F}font-size:${sh(26)}px;color:#e8efe9;margin-top:${sh(18)}px;`
+    + `text-shadow:0 ${sh(3)}px 0 rgba(0,0,0,.6)">100 волн · 10 боссов · ни одного перекура</div>`;
+  document.body.appendChild(d);
+};
+
 const ONLY = process.argv[2] || '';
 
 (async () => {
   const b = await chromium.launch(LAUNCH);
 
   // ——— скриншоты 1200×600
-  if(ONLY !== 'snippet'){
+  if(ONLY === ''){
   const pg = await openPage(b, 1200, 600);
   for(const s of BATTLES){
     const file = path.join(OUT, s.file + '.png');
@@ -115,26 +141,25 @@ const ONLY = process.argv[2] || '';
   await pg.close();
   }
 
-  // ——— большой сниппет 1120×630: кадр боя с названием поверх, как обложка на Яндексе
+  // ——— большой сниппет ВК 1120×630: кадр боя с названием поверх
+  if(ONLY === '' || ONLY === 'snippet'){
   const pg2 = await openPage(b, 1120, 630);
   const snip = path.join(OUT, 'snippet-1120x630.png');
-  // накладку вешаем ДО съёмки: она статична, а бой под ней продолжает жить,
-  // и цикл «лучшего кадра» снимает её вместе с боем
-  await pg2.evaluate(() => {
-    const d = document.createElement('div');
-    d.style.cssText = 'position:fixed;inset:0;z-index:9999;pointer-events:none;display:flex;'
-      + 'flex-direction:column;align-items:center;justify-content:center;'
-      + 'background:radial-gradient(ellipse at center,rgba(0,0,0,.34),rgba(0,0,0,.66))';
-    d.innerHTML = '<div style="font-family:\'Russo One\',system-ui,sans-serif;font-size:88px;'
-      + 'letter-spacing:12px;color:#f1c40f;text-shadow:0 6px 0 rgba(0,0,0,.6)">ЖЕСТЯНКИ</div>'
-      + '<div style="font-family:\'Russo One\',system-ui,sans-serif;font-size:26px;'
-      + 'color:#e8efe9;margin-top:18px;text-shadow:0 3px 0 rgba(0,0,0,.6)">'
-      + '100 волн · 10 боссов · ни одного перекура</div>';
-    document.body.appendChild(d);
-  });
+  await pg2.evaluate(nazvanie, 1120);
   const r = await shootScene(pg2, { wave: 24, score: 3400 }, snip);
   console.log(`snippet-1120x630  волна 24 · врагов ${r.bestN.e} · пуль ${r.bestN.b} · вес ${r.best.toFixed(1)}`);
   await pg2.close();
+  }
+
+  // ——— обложка Яндекса 800×470: то же самое, только меньше и в свою папку
+  if(ONLY === '' || ONLY === 'cover'){
+  const pg3 = await openPage(b, 800, 470);
+  const cover = path.join(__dirname, '..', 'Яндекс', 'cover_800x470.png');
+  await pg3.evaluate(nazvanie, 800);
+  const rc = await shootScene(pg3, { wave: 24, score: 3400 }, cover);
+  console.log(`cover_800x470  волна 24 · врагов ${rc.bestN.e} · пуль ${rc.bestN.b} · вес ${rc.best.toFixed(1)}`);
+  await pg3.close();
+  }
 
   await b.close();
 })();
